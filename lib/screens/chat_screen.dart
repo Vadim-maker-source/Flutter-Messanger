@@ -65,7 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (_sentIds.contains(msg.id)) { _sentIds.remove(msg.id); return; }
         if (_messages.any((m) => m.id == msg.id)) return;
         setState(() => _messages.add(msg));
-        _scrollToBottom();
+        _scrollToBottom(animate: true);
         _api.markAsRead(widget.chat.id);
       },
       onMessageUpdated: (data) {
@@ -95,9 +95,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animate = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
+      if (!_scroll.hasClients) return;
+      if (animate) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      } else {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
@@ -111,7 +118,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (msg != null && mounted) {
       _sentIds.add(msg.id);
       setState(() => _messages.add(msg));
-      _scrollToBottom();
+      _scrollToBottom(animate: true);
     }
   }
 
@@ -125,7 +132,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (msg != null && mounted) {
       _sentIds.add(msg.id);
       setState(() => _messages.add(msg));
-      _scrollToBottom();
+      _scrollToBottom(animate: true);
     }
   }
 
@@ -256,6 +263,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? _buildEmpty()
                   : ListView.builder(
                       controller: _scroll,
+                      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       itemCount: _messages.length,
                       itemBuilder: (_, i) {

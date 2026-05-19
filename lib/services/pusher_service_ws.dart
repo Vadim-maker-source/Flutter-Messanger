@@ -36,7 +36,10 @@ class PusherService {
   Future<void> _sub(String channel, void Function(PusherEvent) onEvent) async {
     await _ensureConnected();
     try {
-      await _pusher.subscribe(channelName: channel, onEvent: onEvent);
+      await _pusher.subscribe(
+        channelName: channel,
+        onEvent: (dynamic event) => onEvent(event as PusherEvent),
+      );
     } catch (e) {
       print('[PUSHER] subscribe error ($channel): $e');
     }
@@ -50,6 +53,7 @@ class PusherService {
     void Function(List<String>)? onMessagesRead,
   }) {
     _sub(chatId, (event) {
+      print('[PUSHER] event on $chatId: ${event.eventName} data=${event.data}');
       final data = _parse(event.data);
       switch (event.eventName) {
         case 'new-message':

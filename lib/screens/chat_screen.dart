@@ -141,7 +141,7 @@ class _ChatScreenState extends State<ChatScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: GridView.count(crossAxisCount: 4, shrinkWrap: true,
-            mainAxisSpacing: 12, crossAxisSpacing: 12,
+            mainAxisSpacing: 8, crossAxisSpacing: 12,
             children: [
               _AttachBtn(icon: Icons.photo_library_rounded, label: 'Фото',
                   color: const Color(0xFF0EA5E9),
@@ -657,8 +657,11 @@ class _AttachBtn extends StatelessWidget {
           decoration: BoxDecoration(color: color.withOpacity(0.15),
               borderRadius: BorderRadius.circular(16)),
           child: Icon(icon, color: color, size: 26)),
-      const SizedBox(height: 6),
-      Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.5))),
+      const SizedBox(height: 4),
+      Text(label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5))),
     ]),
   );
 }

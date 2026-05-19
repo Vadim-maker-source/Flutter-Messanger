@@ -167,6 +167,16 @@ Future<void> _initStreamAndCalls(String userId) async {
       name: displayName,
     ),
     userToken: streamToken,
+    // options: const StreamVideoOptions(
+    //   iceServers: [
+    //     RTCIceServer(
+    //       urls: ['turn:ВАШ_IP:3478', 'turns:ВАШ_IP:5349'],
+    //       username: 'turnuser',
+    //       credential: 'turnpassword',
+    //     ),
+    //     RTCIceServer(urls: ['stun:stun.l.google.com:19302']),
+    //   ],
+    // ),
   );
 
   // Подписываемся на Pusher-события звонков

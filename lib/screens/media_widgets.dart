@@ -153,10 +153,12 @@ class _AudioMessageState extends State<AudioMessage> {
     });
     _player.positionStream.listen((p) { if (mounted) setState(() => _pos = p); });
     _player.playerStateStream.listen((s) {
-      if (mounted) setState(() => _playing = s.playing);
       if (s.processingState == ProcessingState.completed) {
+        _player.stop();
         _player.seek(Duration.zero);
         if (mounted) setState(() => _playing = false);
+      } else {
+        if (mounted) setState(() => _playing = s.playing);
       }
     });
   }

@@ -77,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Icon(Icons.chat_bubble_rounded, size: 16, color: Colors.white),
           ),
           const SizedBox(width: 10),
-          const Text('Сообщения',
+          const Text('Чаты',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
           const Spacer(),
           _HBtn(icon: Icons.search_rounded, onTap: () =>

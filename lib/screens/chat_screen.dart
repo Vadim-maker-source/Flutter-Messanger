@@ -80,10 +80,26 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!mounted) return;
         setState(() => _messages.removeWhere((m) => m.id == id));
       },
-    );
-    // Pusher: messages-read
-    _pusher.subscribeToChat(widget.chat.id,
-      onNewMessage: (_) {},
+      onMessagesRead: (readIds) {
+        if (!mounted) return;
+        setState(() {
+          for (int i = 0; i < _messages.length; i++) {
+            if (readIds.contains(_messages[i].id)) {
+              final msg = _messages[i];
+              final alreadyRead = msg.readReceipts.any((r) => r.userId != _myId);
+              if (!alreadyRead) {
+                _messages[i] = Message(
+                  id: msg.id, chatId: msg.chatId, userId: msg.userId,
+                  content: msg.content, createdAt: msg.createdAt,
+                  updatedAt: msg.updatedAt, user: msg.user,
+                  fileUrl: msg.fileUrl, fileType: msg.fileType,
+                  readReceipts: [...msg.readReceipts, ReadReceipt(userId: _myId ?? '', readAt: DateTime.now())],
+                );
+              }
+            }
+          }
+        });
+      },
     );
   }
 

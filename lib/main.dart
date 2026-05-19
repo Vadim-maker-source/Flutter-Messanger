@@ -141,10 +141,16 @@ class _SplashState extends State<_Splash> {
 
 /// Инициализирует Stream SDK и подписывается на Pusher-события звонков.
 /// Вызывается после логина и при старте если уже авторизован.
+bool _callsInitialized = false;
+
 Future<void> _initStreamAndCalls(String userId) async {
-  // Получаем Stream токен с бэкенда
+  if (_callsInitialized) return;
+  _callsInitialized = true;
   final tokenData = await _api.getStreamToken();
-  if (tokenData == null) return;
+  if (tokenData == null) {
+    print('[CALLS] getStreamToken returned null — check /calls/token endpoint');
+    return;
+  }
 
   final streamToken = tokenData['token'] as String;
   final apiKey = tokenData['apiKey'] as String;
@@ -174,7 +180,8 @@ Future<void> _initStreamAndCalls(String userId) async {
 bool _callScreenOpen = false;
 
 void _handleIncomingCall(Map<String, dynamic> data) {
-  if (_callScreenOpen) return;
+  print('[CALLS] incoming-call received: $data');
+  if (_callScreenOpen) { print('[CALLS] screen already open, skipping'); return; }
   final callId = data['callId'] as String? ?? '';
   final type = data['type'] as String? ?? 'audio';
   final chatName = data['chatName'] as String? ?? 'Звонок';
@@ -191,7 +198,8 @@ void _handleIncomingCall(Map<String, dynamic> data) {
 }
 
 void _handleOutgoingCall(Map<String, dynamic> data) {
-  if (_callScreenOpen) return;
+  print('[CALLS] outgoing-call received: $data');
+  if (_callScreenOpen) { print('[CALLS] screen already open, skipping'); return; }
   final callId = data['callId'] as String? ?? '';
   final type = data['type'] as String? ?? 'audio';
   final chatName = data['chatName'] as String? ?? 'Звонок';
@@ -212,21 +220,28 @@ void _openCallScreen({
   required String callerName,
   required String chatName,
 }) {
-  final ctx = navigatorKey.currentContext;
-  if (ctx == null) return;
+  print('[CALLS] _openCallScreen callId=$callId ctx=${navigatorKey.currentContext}');
   _callScreenOpen = true;
-  Navigator.of(ctx).push(
-    MaterialPageRoute(
-      builder: (_) => CallScreen(
-        callId: callId,
-        callType: callType,
-        isIncoming: isIncoming,
-        callerName: callerName,
-        chatName: chatName,
+
+  // Используем addPostFrameCallback чтобы гарантировать готовность контекста
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      print('[CALLS] context is null, cannot navigate');
+      _callScreenOpen = false;
+      return;
+    }
+    Navigator.of(ctx).push(
+      MaterialPageRoute(
+        builder: (_) => CallScreen(
+          callId: callId,
+          callType: callType,
+          isIncoming: isIncoming,
+          callerName: callerName,
+          chatName: chatName,
+        ),
       ),
-    ),
-  ).then((_) {
-    _callScreenOpen = false;
+    ).then((_) => _callScreenOpen = false);
   });
 }
 
@@ -242,4 +257,5 @@ Future<void> initCallsAfterLogin(String userId, String displayName) async {
 void disposeCallsOnLogout(String userId) {
   _callPusher.unsubscribeFromUserChannel(userId);
   StreamVideo.reset(disconnect: true);
+  _callsInitialized = false;
 }

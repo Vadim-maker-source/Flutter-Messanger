@@ -8,7 +8,7 @@ import '../models/chat.dart';
 import '../models/message.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://messanger-rho-six.vercel.app/api/mobile';
+  static const String baseUrl = 'http://192.168.0.109:3000/api/mobile';
 
   String? _token;
 
@@ -38,7 +38,6 @@ class ApiService {
     };
   }
 
-  /// Безопасно декодирует JSON. Возвращает null если ответ — HTML или не JSON.
   Map<String, dynamic>? _decode(http.Response res) {
     try {
       final body = res.body.trim();
@@ -48,8 +47,6 @@ class ApiService {
       return null;
     }
   }
-
-  // ─── Auth ───────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
@@ -103,6 +100,7 @@ class ApiService {
         Uri.parse('$baseUrl/chats/sidebar'),
         headers: await _headers(),
       );
+      print('[SIDEBAR] status=${res.statusCode} body=${res.body}');
       final data = _decode(res);
       if (data != null && data['success'] == true) {
         final chats = (data['data']['chats'] as List)
@@ -114,7 +112,9 @@ class ApiService {
           'servers': data['data']['servers'] ?? [],
         };
       }
-    } catch (_) {}
+    } catch (e) {
+      print('[SIDEBAR] exception: $e');
+    }
     return {'success': false, 'chats': <Chat>[], 'servers': []};
   }
 

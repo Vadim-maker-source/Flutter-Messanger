@@ -28,6 +28,9 @@ class Chat {
     );
   }
 
+  /// Minimal stub used when navigating from a notification (only id is known).
+  factory Chat.stub(String id) => Chat(id: id, title: '', type: 'PRIVATE');
+
   factory Chat.fromSidebar(Map<String, dynamic> json) {
     return Chat(
       id: json['id'],

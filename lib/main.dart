@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/call_screen.dart';
 import 'services/api_service.dart';
+import 'services/notification_service.dart';
 import 'services/pusher_service_ws.dart';
 
 // Глобальный navigatorKey для показа звонков поверх любого экрана
@@ -17,6 +19,7 @@ final _api = ApiService();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   await initializeDateFormatting('ru', null);
   runApp(const MyApp());
 }
@@ -25,12 +28,13 @@ class AppColors {
   static const primary = Color(0xFF6C3EF4);
   static const secondary = Color(0xFFB98CFF);
   static const darkAccent = Color(0xFF4B1FD1);
-  static const background = Color(0xFF09090B);
-  static const surface = Color(0xFF18181B);
+  static const background = Color(0xFF1D2733);
+  static const surface = Color(0xFF1D2733);
   static const surfaceAlt = Color(0xFF27272A);
   static const border = Color(0xFF3F3F46);
   static const muted = Color(0xFF71717A);
   static const scrollbar = Color(0xFF7166D8);
+  static const searchbar = Color(0xFF2D3542);
 }
 
 class MyApp extends StatelessWidget {
@@ -146,6 +150,18 @@ bool _callsInitialized = false;
 Future<void> _initStreamAndCalls(String userId) async {
   if (_callsInitialized) return;
   _callsInitialized = true;
+
+  // Init FCM notifications
+  await NotificationService.init(navigatorKey);
+  final fcmToken = await NotificationService.getToken();
+  print('[FCM] token: $fcmToken');
+  if (fcmToken != null) {
+    await _api.saveFcmToken(fcmToken);
+    print('[FCM] token saved to server');
+  } else {
+    print('[FCM] token is NULL — notifications will not work');
+  }
+
   final tokenData = await _api.getStreamToken();
   if (tokenData == null) {
     print('[CALLS] getStreamToken returned null — check /calls/token endpoint');

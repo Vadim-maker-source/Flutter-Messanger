@@ -8,7 +8,7 @@ import '../models/chat.dart';
 import '../models/message.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.0.109:3000/api/mobile';
+  static const String baseUrl = 'https://kyro-messanger.vercel.app/api/mobile';
 
   String? _token;
 
@@ -236,6 +236,24 @@ class ApiService {
     } catch (_) { return false; }
   }
 
+  Future<void> saveFcmToken(String token) async {
+    try {
+      await http.post(
+        Uri.parse('$baseUrl/fcm/token'),
+        headers: await _headers(),
+        body: jsonEncode({'token': token}),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> deleteFcmToken() async {
+    try {
+      await http.delete(
+        Uri.parse('$baseUrl/fcm/token'),
+        headers: await _headers(),
+      );
+    } catch (_) {}
+  }
   Future<void> sendTyping(String chatId, bool isTyping) async {
     try {
       await http.post(
@@ -261,7 +279,8 @@ class ApiService {
   }
 
   Future<User?> updateProfile(
-      {String? displayName, String? bio, String? status, String? avatarUrl}) async {
+      {String? displayName, String? bio, String? status, String? avatarUrl,
+       Map<String, dynamic>? socialLinks}) async {
     try {
       final res = await http.patch(
         Uri.parse('$baseUrl/profile'),
@@ -271,6 +290,7 @@ class ApiService {
           if (bio != null) 'bio': bio,
           if (status != null) 'status': status,
           if (avatarUrl != null) 'avatarUrl': avatarUrl,
+          if (socialLinks != null) 'socialLinks': socialLinks,
         }),
       );
       final data = _decode(res);

@@ -69,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Column(
           children: [
@@ -90,37 +91,72 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.surfaceAlt)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.darkAccent],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(8),
+      color: AppColors.surface,
+      child: Column(children: [
+        // Top row: logo + title + menu
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+          child: Row(children: [
+            // Logo from assets
+            Image.asset('assets/icon.png', width: 30, height: 30),
+            const SizedBox(width: 10),
+            const Text('Чаты',
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+            const Spacer(),
+            // Three-dot menu
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+              color: AppColors.surfaceAlt,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              onSelected: (v) {
+                if (v == 'profile') Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ProfileScreen()));
+                if (v == 'create') _showCreateMenu();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'create',
+                    child: Row(children: [
+                      Icon(Icons.add_rounded, size: 18, color: AppColors.primary),
+                      SizedBox(width: 10),
+                      Text('Новый чат'),
+                    ])),
+                const PopupMenuItem(value: 'profile',
+                    child: Row(children: [
+                      Icon(Icons.person_outline_rounded, size: 18, color: AppColors.primary),
+                      SizedBox(width: 10),
+                      Text('Профиль'),
+                    ])),
+              ],
             ),
-            child: const Icon(Icons.chat_bubble_rounded, size: 16, color: Colors.white),
+          ]),
+        ),
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+          child: GestureDetector(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SearchScreen()))
+                .then((_) => _load()),
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.searchbar,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(children: [
+                const SizedBox(width: 14),
+                const Icon(Icons.search_rounded, color: AppColors.muted, size: 20),
+                const SizedBox(width: 10),
+                Text('Поиск чатов',
+                    style: TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 15)),
+              ]),
+            ),
           ),
-          const SizedBox(width: 10),
-          const Text('Чаты',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-          const Spacer(),
-          _HBtn(icon: Icons.search_rounded, onTap: () =>
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))
-                  .then((_) => _load())),
-          const SizedBox(width: 8),
-          _HBtn(icon: Icons.add_rounded, onTap: _showCreateMenu),
-          const SizedBox(width: 8),
-          _HBtn(icon: Icons.person_outline_rounded, onTap: () =>
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()))),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
@@ -147,14 +183,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return ListView(children: [
       if (_servers.isNotEmpty) ...[
-        _SectionLabel('Серверы'),
         ..._servers.map(_buildServerTile),
-        const SizedBox(height: 4),
       ],
-      if (_chats.isNotEmpty) ...[
-        _SectionLabel('Чаты'),
-        ..._chats.map(_buildChatTile),
-      ],
+      ..._chats.map(_buildChatTile),
       const SizedBox(height: 80),
     ]);
   }
@@ -166,50 +197,42 @@ class _HomeScreenState extends State<HomeScreen> {
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => ChatScreen(chat: chat))).then((_) => _load()),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(children: [
-            _Avatar(imageUrl: chat.imageUrl, name: chat.title,
-                isChannel: isChannel, isGroup: isGroup),
-            const SizedBox(width: 12),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  if (isChannel)
-                    const Padding(padding: EdgeInsets.only(right: 3),
-                        child: Icon(Icons.tag, size: 13, color: AppColors.primary)),
-                  Expanded(child: Text(chat.title,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                      overflow: TextOverflow.ellipsis)),
-                ]),
-                if (chat.lastMessage != null)
-                  Text(chat.lastMessage!, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: AppColors.muted)),
-              ],
-            )),
-            if (chat.unreadCount > 0)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text('${chat.unreadCount}',
-                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(children: [
+          _Avatar(imageUrl: chat.imageUrl, name: chat.title,
+              isChannel: isChannel, isGroup: isGroup),
+          const SizedBox(width: 14),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                if (isChannel)
+                  const Padding(padding: EdgeInsets.only(right: 3),
+                      child: Icon(Icons.tag, size: 13, color: AppColors.primary)),
+                Expanded(child: Text(chat.title,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.white),
+                    overflow: TextOverflow.ellipsis)),
+              ]),
+              if (chat.lastMessage != null)
+                Text(chat.lastMessage!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+            ],
+          )),
+          if (chat.unreadCount > 0)
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(10),
               ),
-          ]),
-        ),
+              child: Text('${chat.unreadCount}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+            ),
+        ]),
       ),
     );
   }
-
   Widget _buildServerTile(Map<String, dynamic> server) {
     final chats = (server['chats'] as List?) ?? [];
     return Padding(
@@ -338,17 +361,17 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (imageUrl != null) {
-      return CircleAvatar(backgroundImage: NetworkImage(imageUrl!), radius: 22);
+      return CircleAvatar(backgroundImage: NetworkImage(imageUrl!), radius: 26);
     }
     return Container(
-      width: 44, height: 44,
+      width: 52, height: 52,
       decoration: BoxDecoration(
         color: isChannel
             ? AppColors.primary.withOpacity(0.15)
             : isGroup
                 ? AppColors.darkAccent.withOpacity(0.15)
                 : AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(14),
+        shape: BoxShape.circle,
       ),
       child: isChannel
           ? const Icon(Icons.tag, size: 20, color: AppColors.primary)

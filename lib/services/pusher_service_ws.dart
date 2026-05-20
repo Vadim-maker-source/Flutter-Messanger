@@ -14,18 +14,16 @@ class PusherService {
 
   Future<void> _ensureConnected() async {
     if (_initialized) return;
-    print('[PUSHER] initializing...');
     await _pusher.init(
       apiKey: _key,
       cluster: _cluster,
-      onConnectionStateChange: (current, previous) =>
-          print('[PUSHER] state: $previous -> $current'),
-      onError: (message, code, error) =>
-          print('[PUSHER] error: $message code=$code error=$error'),
+      onConnectionStateChange: (cur, prev) =>
+          print('[PUSHER] $prev -> $cur'),
+      onError: (msg, code, err) =>
+          print('[PUSHER] error: $msg code=$code'),
     );
     await _pusher.connect();
     _initialized = true;
-    print('[PUSHER] connected');
   }
 
   Map<String, dynamic> _parse(dynamic data) {
@@ -38,12 +36,14 @@ class PusherService {
     try {
       await _pusher.subscribe(
         channelName: channel,
-        onEvent: (dynamic event) => onEvent(event as PusherEvent),
+        onEvent: (dynamic e) => onEvent(e as PusherEvent),
       );
     } catch (e) {
       print('[PUSHER] subscribe error ($channel): $e');
     }
   }
+
+  // ─── Chat channel ────────────────────────────────────────────────────────────
 
   void subscribeToChat(
     String chatId, {
@@ -51,9 +51,11 @@ class PusherService {
     void Function(Map<String, dynamic>)? onMessageUpdated,
     void Function(String)? onMessageDeleted,
     void Function(List<String>)? onMessagesRead,
+    void Function(String userId, String displayName)? onTypingStart,
+    void Function(String userId)? onTypingStop,
+    void Function(String messageId, Map<String, dynamic> reactions)? onReactionUpdated,
   }) {
     _sub(chatId, (event) {
-      print('[PUSHER] event on $chatId: ${event.eventName} data=${event.data}');
       final data = _parse(event.data);
       switch (event.eventName) {
         case 'new-message':
@@ -68,9 +70,23 @@ class PusherService {
                   .toList() ??
               [];
           onMessagesRead?.call(ids);
+        case 'typing-start':
+          onTypingStart?.call(
+            data['userId']?.toString() ?? '',
+            data['displayName']?.toString() ?? '',
+          );
+        case 'typing-stop':
+          onTypingStop?.call(data['userId']?.toString() ?? '');
+        case 'reaction-updated':
+          onReactionUpdated?.call(
+            data['messageId']?.toString() ?? '',
+            Map<String, dynamic>.from(data['reactions'] ?? {}),
+          );
       }
     });
   }
+
+  // ─── Presence (online status) ────────────────────────────────────────────────
 
   void subscribeToPresence(
       void Function(String userId, bool isOnline, String? lastActive) onChange) {
@@ -85,14 +101,31 @@ class PusherService {
     });
   }
 
+  // ─── Sidebar channel (unread updates) ────────────────────────────────────────
+
+  void subscribeToSidebar(
+    String userId, {
+    required void Function(String chatId, int unreadCount, Map<String, dynamic>? lastMessage) onUpdate,
+  }) {
+    _sub('sidebar-$userId', (event) {
+      if (event.eventName != 'sidebar-update') return;
+      final data = _parse(event.data);
+      onUpdate(
+        data['chatId']?.toString() ?? '',
+        (data['unreadCount'] as num?)?.toInt() ?? 0,
+        data['lastMessage'] as Map<String, dynamic>?,
+      );
+    });
+  }
+
+  // ─── User channel (calls) ────────────────────────────────────────────────────
+
   void subscribeToUserChannel(
     String userId, {
     required void Function(Map<String, dynamic>) onIncomingCall,
     required void Function(Map<String, dynamic>) onOutgoingCall,
   }) {
-    print('[PUSHER] subscribing to user-$userId');
     _sub('user-$userId', (event) {
-      print('[PUSHER] user channel event: ${event.eventName}');
       final data = _parse(event.data);
       switch (event.eventName) {
         case 'incoming-call':
@@ -103,9 +136,12 @@ class PusherService {
     });
   }
 
+  // ─── Unsubscribe ─────────────────────────────────────────────────────────────
+
   void unsubscribe(String channel) => _pusher.unsubscribe(channelName: channel);
   void unsubscribeFromUserChannel(String userId) => unsubscribe('user-$userId');
   void unsubscribeFromPresence() => unsubscribe('presence');
+  void unsubscribeFromSidebar(String userId) => unsubscribe('sidebar-$userId');
 
   void disconnect() {
     _pusher.disconnect();

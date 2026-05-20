@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../services/api_service.dart';
+import '../services/pusher_service_ws.dart';
 import '../models/chat.dart';
 import 'chat_screen.dart';
 import 'profile_screen.dart';
@@ -15,14 +17,43 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _api = ApiService();
+  final _pusher = PusherService();
   List<Chat> _chats = [];
   List<Map<String, dynamic>> _servers = [];
   bool _isLoading = true;
+  String? _userId;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _initPusher();
+  }
+
+  Future<void> _initPusher() async {
+    final prefs = await SharedPreferences.getInstance();
+    _userId = prefs.getString('user_id');
+    if (_userId == null) return;
+    _pusher.subscribeToSidebar(_userId!, onUpdate: (chatId, unreadCount, lastMessage) {
+      if (!mounted) return;
+      setState(() {
+        final i = _chats.indexWhere((c) => c.id == chatId);
+        if (i != -1) {
+          final c = _chats[i];
+          _chats[i] = Chat(
+            id: c.id, title: c.title, imageUrl: c.imageUrl, type: c.type,
+            role: c.role, unreadCount: unreadCount,
+            lastMessage: lastMessage?['content'] as String? ?? c.lastMessage,
+          );
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_userId != null) _pusher.unsubscribeFromSidebar(_userId!);
+    super.dispose();
   }
 
   Future<void> _load() async {

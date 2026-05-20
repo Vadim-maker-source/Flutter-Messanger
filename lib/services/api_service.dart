@@ -48,6 +48,8 @@ class ApiService {
     }
   }
 
+  // ─── Auth ────────────────────────────────────────────────────────────────────
+
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final res = await http.post(
@@ -56,17 +58,16 @@ class ApiService {
         body: jsonEncode({'email': email, 'password': password}),
       );
       final data = _decode(res);
-      print('[LOGIN] status=${res.statusCode} body=${res.body}');
       if (data != null && data['success'] == true) {
         await _saveToken(data['token']);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('user_id', data['user']['id'] ?? '');
-        await prefs.setString('user_display_name', data['user']['displayName'] ?? data['user']['username'] ?? '');
+        await prefs.setString('user_display_name',
+            data['user']['displayName'] ?? data['user']['username'] ?? '');
         return {'success': true, 'user': User.fromJson(data['user'])};
       }
       return {'success': false, 'error': data?['error'] ?? 'Ошибка входа'};
     } catch (e) {
-      print('[LOGIN] exception: $e');
       return {'success': false, 'error': 'Нет соединения с сервером'};
     }
   }
@@ -87,12 +88,12 @@ class ApiService {
         return await login(email, password);
       }
       return {'success': false, 'error': data?['error'] ?? 'Ошибка регистрации'};
-    } catch (e) {
+    } catch (_) {
       return {'success': false, 'error': 'Нет соединения с сервером'};
     }
   }
 
-  // ─── Sidebar ────────────────────────────────────────────────────────────────
+  // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getSidebar() async {
     try {
@@ -100,7 +101,6 @@ class ApiService {
         Uri.parse('$baseUrl/chats/sidebar'),
         headers: await _headers(),
       );
-      print('[SIDEBAR] status=${res.statusCode} body=${res.body}');
       final data = _decode(res);
       if (data != null && data['success'] == true) {
         final chats = (data['data']['chats'] as List)
@@ -118,12 +118,27 @@ class ApiService {
     return {'success': false, 'chats': <Chat>[], 'servers': []};
   }
 
-  // ─── Messages ───────────────────────────────────────────────────────────────
+  // ─── Messages ────────────────────────────────────────────────────────────────
 
   Future<List<Message>> getMessages(String chatId) async {
     try {
       final res = await http.get(
         Uri.parse('$baseUrl/messages/$chatId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data != null && data['success'] == true) {
+        return (data['data'] as List).map((m) => Message.fromJson(m)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<List<Message>> getMessagesPaginated(String chatId,
+      {int page = 1, int limit = 30}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/messages/$chatId?page=$page&limit=$limit'),
         headers: await _headers(),
       );
       final data = _decode(res);
@@ -188,7 +203,50 @@ class ApiService {
     } catch (_) {}
   }
 
-  // ─── Profile ────────────────────────────────────────────────────────────────
+  Future<bool> addReaction(String messageId, String reaction) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/messages/reactions'),
+        headers: await _headers(),
+        body: jsonEncode({'messageId': messageId, 'reaction': reaction}),
+      );
+      return _decode(res)?['success'] == true;
+    } catch (_) { return false; }
+  }
+
+  Future<bool> removeReaction(String messageId, String reaction) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/messages/reactions'),
+        headers: await _headers(),
+        body: jsonEncode({'messageId': messageId, 'reaction': reaction}),
+      );
+      return _decode(res)?['success'] == true;
+    } catch (_) { return false; }
+  }
+
+  Future<bool> forwardMessage(String messageId, List<String> chatIds) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/messages/forward'),
+        headers: await _headers(),
+        body: jsonEncode({'messageId': messageId, 'chatIds': chatIds}),
+      );
+      return _decode(res)?['success'] == true;
+    } catch (_) { return false; }
+  }
+
+  Future<void> sendTyping(String chatId, bool isTyping) async {
+    try {
+      await http.post(
+        Uri.parse('$baseUrl/messages/typing'),
+        headers: await _headers(),
+        body: jsonEncode({'chatId': chatId, 'isTyping': isTyping}),
+      );
+    } catch (_) {}
+  }
+
+  // ─── Profile ─────────────────────────────────────────────────────────────────
 
   Future<User?> getProfile() async {
     try {
@@ -202,7 +260,8 @@ class ApiService {
     return null;
   }
 
-  Future<User?> updateProfile({String? displayName, String? bio, String? status}) async {
+  Future<User?> updateProfile(
+      {String? displayName, String? bio, String? status, String? avatarUrl}) async {
     try {
       final res = await http.patch(
         Uri.parse('$baseUrl/profile'),
@@ -211,6 +270,7 @@ class ApiService {
           if (displayName != null) 'displayName': displayName,
           if (bio != null) 'bio': bio,
           if (status != null) 'status': status,
+          if (avatarUrl != null) 'avatarUrl': avatarUrl,
         }),
       );
       final data = _decode(res);
@@ -219,7 +279,7 @@ class ApiService {
     return null;
   }
 
-  // ─── Settings ───────────────────────────────────────────────────────────────
+  // ─── Settings ────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> getSettings() async {
     try {
@@ -267,6 +327,18 @@ class ApiService {
   Future<List<Map<String, dynamic>>> searchUsers(String query) async {
     final result = await search(query);
     return result['users'] as List<Map<String, dynamic>>;
+  }
+
+  Future<Map<String, dynamic>?> getUserStatus(String userId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/users/status?userId=$userId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data != null && data['success'] == true) return data['data'] as Map<String, dynamic>;
+    } catch (_) {}
+    return null;
   }
 
   // ─── Create ──────────────────────────────────────────────────────────────────

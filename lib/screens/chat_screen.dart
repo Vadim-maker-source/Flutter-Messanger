@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
-import '../services/pusher_service.dart';
+import '../services/pusher_service_ws.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../main.dart' show navigatorKey;
@@ -41,6 +42,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _pusher = PusherService();
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
+  final _focusNode = FocusNode();
 
   List<Message> _messages = [];
   bool _isLoading = true;
@@ -48,10 +50,64 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _myId;
   final Set<String> _sentIds = {};
 
+  // Typing indicator
+  final Map<String, String> _typingUsers = {}; // userId -> displayName
+  bool _isTyping = false;
+  DateTime? _lastTypingSent;
+
+  // Online status
+  bool _partnerOnline = false;
+
+  // Pagination
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+  static const _pageSize = 30;
+
+  // Edit mode
+  Message? _editingMsg;
+  Message? _replyingTo;
+
+  // Reactions map: emoji -> key
+  static const _reactions = {
+    '❤️': 'heart', '👍': 'like', '😂': 'laugh',
+    '😮': 'wow',   '😢': 'sad',  '😡': 'angry',
+  };
+
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
     _init();
+  }
+
+  void _onScroll() {
+    if (_scroll.position.pixels <= 80 && _hasMore && !_loadingMore) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    final older = await _api.getMessagesPaginated(
+        widget.chat.id, page: _page + 1, limit: _pageSize);
+    if (!mounted) return;
+    if (older.isEmpty) {
+      setState(() { _hasMore = false; _loadingMore = false; });
+      return;
+    }
+    final prevOffset = _scroll.position.maxScrollExtent - _scroll.position.pixels;
+    setState(() {
+      _messages = [...older, ..._messages];
+      _page++;
+      _loadingMore = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent - prevOffset);
+      }
+    });
   }
 
   Future<void> _init() async {
@@ -100,13 +156,49 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         });
       },
+      onTypingStart: (userId, displayName) {
+        if (!mounted || userId == _myId) return;
+        setState(() => _typingUsers[userId] = displayName);
+      },
+      onTypingStop: (userId) {
+        if (!mounted) return;
+        setState(() => _typingUsers.remove(userId));
+      },
+      onReactionUpdated: (messageId, reactions) {
+        if (!mounted) return;
+        setState(() {
+          final i = _messages.indexWhere((m) => m.id == messageId);
+          if (i != -1) {
+            final m = _messages[i];
+            _messages[i] = Message(
+              id: m.id, chatId: m.chatId, userId: m.userId,
+              content: m.content, createdAt: m.createdAt, updatedAt: m.updatedAt,
+              user: m.user, fileUrl: m.fileUrl, fileType: m.fileType,
+              readReceipts: m.readReceipts, reactions: reactions,
+            );
+          }
+        });
+      },
     );
+    _pusher.subscribeToPresence((userId, isOnline, _) {
+      if (!mounted) return;
+      // Для приватного чата — показываем статус собеседника
+      if (widget.chat.type == 'PRIVATE') {
+        setState(() => _partnerOnline = isOnline);
+      }
+    });
   }
 
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
-    final msgs = await _api.getMessages(widget.chat.id);
-    setState(() { _messages = msgs; _isLoading = false; });
+    final msgs = await _api.getMessagesPaginated(
+        widget.chat.id, page: 1, limit: _pageSize);
+    setState(() {
+      _messages = msgs;
+      _isLoading = false;
+      _page = 1;
+      _hasMore = msgs.length >= _pageSize;
+    });
     await _api.markAsRead(widget.chat.id);
     _scrollToBottom();
   }
@@ -127,10 +219,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _send() async {
+    if (_editingMsg != null) {
+      await _editMessage(_editingMsg!);
+      return;
+    }
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
     _ctrl.clear();
-    final msg = await _api.sendMessage(widget.chat.id, text);
+    _stopTyping();
+    final replyId = _replyingTo?.id;
+    setState(() => _replyingTo = null);
+    final msg = await _api.sendMessage(widget.chat.id, text, replyToId: replyId);
     if (msg != null && mounted) {
       _sentIds.add(msg.id);
       setState(() => _messages.add(msg));
@@ -149,6 +248,26 @@ class _ChatScreenState extends State<ChatScreen> {
       _sentIds.add(msg.id);
       setState(() => _messages.add(msg));
       _scrollToBottom(animate: true);
+    }
+  }
+
+  void _onTextChanged(String value) {
+    final now = DateTime.now();
+    if (value.isNotEmpty && (_lastTypingSent == null ||
+        now.difference(_lastTypingSent!).inSeconds >= 3)) {
+      _lastTypingSent = now;
+      _isTyping = true;
+      _api.sendTyping(widget.chat.id, true);
+    } else if (value.isEmpty && _isTyping) {
+      _stopTyping();
+    }
+  }
+
+  void _stopTyping() {
+    if (_isTyping) {
+      _isTyping = false;
+      _lastTypingSent = null;
+      _api.sendTyping(widget.chat.id, false);
     }
   }
 
@@ -192,8 +311,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _showMenu(Message msg) {
-    if (msg.userId != _myId) return;
+  void _showMessageMenu(Message msg) {
+    final isMe = msg.userId == _myId;
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E1E22),
@@ -202,64 +321,154 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(width: 36, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(color: _C.divider, borderRadius: BorderRadius.circular(2))),
-        if (msg.fileUrl == null)
+        // Быстрые реакции
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: _reactions.entries.map((e) {
+              final userReacted = (msg.reactions?[e.value] as List?)
+                  ?.contains(_myId) ?? false;
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                  _toggleReaction(msg, e.value);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: userReacted
+                        ? Colors.white.withOpacity(0.2)
+                        : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(e.key, style: const TextStyle(fontSize: 26)),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const Divider(color: Color(0x1AFFFFFF), height: 1),
+        // Ответить
+        ListTile(
+          leading: const Icon(Icons.reply_rounded, color: Color(0xFFFB923C), size: 20),
+          title: const Text('Ответить', style: TextStyle(color: Colors.white)),
+          onTap: () {
+            Navigator.pop(context);
+            setState(() {
+              _replyingTo = msg;
+              _editingMsg = null;
+            });
+            WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+          },
+        ),
+        // Переслать
+        ListTile(
+          leading: const Icon(Icons.forward_rounded, color: Color(0xFF60A5FA), size: 20),
+          title: const Text('Переслать', style: TextStyle(color: Colors.white)),
+          onTap: () { Navigator.pop(context); _showForwardDialog(msg); },
+        ),
+        // Копировать текст (только если есть текст)
+        if (msg.content.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.copy_rounded, color: Color(0xFF4ADE80), size: 20),
+            title: const Text('Копировать текст', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Clipboard.setData(ClipboardData(text: msg.content));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Текст скопирован'), duration: Duration(seconds: 1)),
+              );
+            },
+          ),
+        if (isMe && msg.fileUrl == null)
           ListTile(
             leading: const Icon(Icons.edit_rounded, color: _C.myBubble, size: 20),
             title: const Text('Редактировать', style: TextStyle(color: Colors.white)),
-            onTap: () { Navigator.pop(context); _editMessage(msg); },
+            onTap: () { Navigator.pop(context); _startEdit(msg); },
           ),
-        ListTile(
-          leading: const Icon(Icons.delete_rounded, color: Colors.red, size: 20),
-          title: const Text('Удалить', style: TextStyle(color: Colors.red)),
-          onTap: () async {
-            Navigator.pop(context);
-            await _api.deleteMessage(msg.id);
-            if (mounted) setState(() => _messages.removeWhere((m) => m.id == msg.id));
-          },
-        ),
+        if (isMe)
+          ListTile(
+            leading: const Icon(Icons.delete_rounded, color: Colors.red, size: 20),
+            title: const Text('Удалить', style: TextStyle(color: Colors.red)),
+            onTap: () async {
+              Navigator.pop(context);
+              await _api.deleteMessage(msg.id);
+              if (mounted) setState(() => _messages.removeWhere((m) => m.id == msg.id));
+            },
+          ),
         const SizedBox(height: 8),
       ])),
     );
   }
 
-  void _editMessage(Message msg) {
-    final ctrl = TextEditingController(text: msg.content);
-    showDialog(context: context, builder: (_) => AlertDialog(
-      backgroundColor: const Color(0xFF1E1E22),
-      title: const Text('Редактировать', style: TextStyle(color: Colors.white)),
-      content: TextField(controller: ctrl, autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(hintText: 'Текст сообщения')),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context),
-            child: Text('Отмена', style: TextStyle(color: Colors.white.withOpacity(0.4)))),
-        TextButton(
-          onPressed: () async {
-            final t = ctrl.text.trim();
-            Navigator.pop(context);
-            if (t.isEmpty) return;
-            await _api.editMessage(msg.id, t);
-            if (mounted) setState(() {
-              final i = _messages.indexWhere((m) => m.id == msg.id);
-              if (i != -1) _messages[i] = Message(
-                id: msg.id, chatId: msg.chatId, userId: msg.userId,
-                content: t, createdAt: msg.createdAt, updatedAt: DateTime.now(),
-                user: msg.user, fileUrl: msg.fileUrl, fileType: msg.fileType,
-                readReceipts: msg.readReceipts,
-              );
-            });
-          },
-          child: const Text('Сохранить', style: TextStyle(color: _C.myBubble)),
-        ),
-      ],
-    ));
+  void _showForwardDialog(Message msg) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E22),
+        title: const Text('Переслать в...', style: TextStyle(color: Colors.white)),
+        content: const Text('Функция пересылки: выберите чат в списке',
+            style: TextStyle(color: Colors.white54, fontSize: 13)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Закрыть', style: TextStyle(color: _C.myBubble))),
+        ],
+      ),
+    );
+  }
+
+  void _toggleReaction(Message msg, String reactionKey) {
+    final users = (msg.reactions?[reactionKey] as List?)
+        ?.map((e) => e.toString()).toList() ?? [];
+    final alreadyReacted = users.contains(_myId);
+    if (alreadyReacted) {
+      _api.removeReaction(msg.id, reactionKey);
+    } else {
+      _api.addReaction(msg.id, reactionKey);
+    }
+  }
+
+  void _startEdit(Message msg) {
+    setState(() {
+      _editingMsg = msg;
+      _ctrl.text = msg.content;
+    });
+    // Фокус на поле ввода
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+  }
+
+  void _cancelEdit() {
+    setState(() { _editingMsg = null; _ctrl.clear(); });
+  }
+
+  void _cancelReply() {
+    setState(() => _replyingTo = null);
+  }
+
+  Future<void> _editMessage(Message msg) async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() { _editingMsg = null; _ctrl.clear(); });
+    await _api.editMessage(msg.id, text);
+    if (mounted) setState(() {
+      final i = _messages.indexWhere((m) => m.id == msg.id);
+      if (i != -1) _messages[i] = Message(
+        id: msg.id, chatId: msg.chatId, userId: msg.userId,
+        content: text, createdAt: msg.createdAt, updatedAt: DateTime.now(),
+        user: msg.user, fileUrl: msg.fileUrl, fileType: msg.fileType,
+        readReceipts: msg.readReceipts, reactions: msg.reactions,
+      );
+    });
   }
 
   @override
   void dispose() {
+    _stopTyping();
     _pusher.unsubscribe(widget.chat.id);
+    _pusher.unsubscribeFromPresence();
     _ctrl.dispose();
     _scroll.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -281,16 +490,23 @@ class _ChatScreenState extends State<ChatScreen> {
                       controller: _scroll,
                       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: _messages.length,
+                      itemCount: _messages.length + (_loadingMore ? 1 : 0),
                       itemBuilder: (_, i) {
-                        final msg = _messages[i];
+                        if (i == 0 && _loadingMore) {
+                          return const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Center(child: SizedBox(width: 20, height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: _C.myBubble))),
+                          );
+                        }
+                        final idx = _loadingMore ? i - 1 : i;
+                        final msg = _messages[idx];
                         final isMe = msg.userId == _myId;
-                        final prev = i > 0 ? _messages[i - 1] : null;
+                        final prev = idx > 0 ? _messages[idx - 1] : null;
                         final showDate = prev == null ||
                             !_sameDay(prev.createdAt, msg.createdAt);
                         final showAvatar = !isMe &&
-                            (prev == null || prev.userId != msg.userId ||
-                             showDate);
+                            (prev == null || prev.userId != msg.userId || showDate);
                         final isGroup = widget.chat.type == 'GROUP' ||
                             widget.chat.type == 'CHANNEL';
                         return Column(children: [
@@ -302,12 +518,16 @@ class _ChatScreenState extends State<ChatScreen> {
                             showName: showAvatar && isGroup,
                             myId: _myId ?? '',
                             isPrivate: widget.chat.type == 'PRIVATE',
-                            onLongPress: () => _showMenu(msg),
+                            onLongPress: () => _showMessageMenu(msg),
+                            onReactionTap: (key) => _toggleReaction(msg, key),
                           ),
                         ]);
                       },
                     ),
         ),
+        // Typing indicator
+        if (_typingUsers.isNotEmpty)
+          _TypingIndicator(names: _typingUsers.values.toList()),
         if (_uploading)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -364,8 +584,15 @@ class _ChatScreenState extends State<ChatScreen> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
               overflow: TextOverflow.ellipsis),
           Text(
-            isPrivate ? 'в сети' : isChannel ? 'Канал' : 'Группа',
-            style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+            isPrivate
+                ? (_partnerOnline ? 'в сети' : 'не в сети')
+                : isChannel ? 'Канал' : 'Группа',
+            style: TextStyle(
+              fontSize: 12,
+              color: isPrivate && _partnerOnline
+                  ? const Color(0xFF4ADE80)
+                  : Colors.white.withOpacity(0.5),
+            ),
           ),
         ])),
       ]),
@@ -397,54 +624,112 @@ class _ChatScreenState extends State<ChatScreen> {
     ]),
   );
 
-  // Инпут точно как в RealTimeChat: bg-white/5 rounded-full
   Widget _buildInput() => Container(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
     color: _C.bg,
-    child: Row(children: [
-      // Скрепка: p-3 bg-white/5 rounded-full
-      GestureDetector(
-        onTap: _showAttachMenu,
-        child: Container(
-          width: 46, height: 46,
-          decoration: BoxDecoration(color: _C.inputBg, shape: BoxShape.circle),
-          child: const Icon(Icons.attach_file_rounded, color: Colors.white, size: 22),
-        ),
-      ),
-      const SizedBox(width: 8),
-      // Поле: bg-white/5 rounded-full px-6 py-4
-      Expanded(child: Container(
-        decoration: BoxDecoration(color: _C.inputBg, borderRadius: BorderRadius.circular(30)),
-        child: Row(children: [
-          const SizedBox(width: 20),
-          Expanded(child: TextField(
-            controller: _ctrl,
-            maxLines: null,
-            textCapitalization: TextCapitalization.sentences,
-            style: const TextStyle(color: Colors.white, fontSize: 15),
-            decoration: InputDecoration(
-              hintText: 'Сообщение...',
-              hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              filled: false,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      // Reply preview
+      if (_replyingTo != null)
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          child: Row(children: [
+            Container(width: 3, height: 36, decoration: BoxDecoration(
+                color: _C.myBubble, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                _replyingTo!.userId == _myId ? 'Вы' :
+                    (_replyingTo!.user?.displayName.isNotEmpty == true
+                        ? _replyingTo!.user!.displayName
+                        : _replyingTo!.user?.username ?? 'Пользователь'),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _C.myBubble),
+              ),
+              Text(
+                _replyingTo!.content.isNotEmpty ? _replyingTo!.content
+                    : _replyingTo!.fileType == 'IMAGE' ? '🖼️ Фото'
+                    : _replyingTo!.fileType == 'VIDEO' ? '🎥 Видео'
+                    : _replyingTo!.fileType == 'AUDIO' ? '🎤 Голосовое'
+                    : '📎 Файл',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+              ),
+            ])),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+              onPressed: _cancelReply,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
-            onSubmitted: (_) => _send(),
+          ]),
+        ),
+      // Edit preview
+      if (_editingMsg != null)
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          child: Row(children: [
+            Container(width: 3, height: 36, decoration: BoxDecoration(
+                color: Colors.orange, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Редактирование', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange)),
+              Text(_editingMsg!.content, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+            ])),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+              onPressed: _cancelEdit,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ]),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        child: Row(children: [
+          GestureDetector(
+            onTap: _showAttachMenu,
+            child: Container(
+              width: 46, height: 46,
+              decoration: BoxDecoration(color: _C.inputBg, shape: BoxShape.circle),
+              child: const Icon(Icons.attach_file_rounded, color: Colors.white, size: 22),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Container(
+            decoration: BoxDecoration(color: _C.inputBg, borderRadius: BorderRadius.circular(30)),
+            child: Row(children: [
+              const SizedBox(width: 20),
+              Expanded(child: TextField(
+                controller: _ctrl,
+                focusNode: _focusNode,
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                onChanged: _onTextChanged,
+                decoration: InputDecoration(
+                  hintText: 'Сообщение...',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onSubmitted: (_) => _send(),
+              )),
+              const SizedBox(width: 8),
+            ]),
           )),
           const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _send,
+            child: Container(
+              width: 46, height: 46,
+              decoration: const BoxDecoration(color: _C.sendBtn, shape: BoxShape.circle),
+              child: const Icon(Icons.send_rounded, color: Colors.white, size: 22),
+            ),
+          ),
         ]),
-      )),
-      const SizedBox(width: 8),
-      // Кнопка отправки: bg-[#7166D8] p-3.5 rounded-full
-      GestureDetector(
-        onTap: _send,
-        child: Container(
-          width: 46, height: 46,
-          decoration: const BoxDecoration(color: _C.sendBtn, shape: BoxShape.circle),
-          child: const Icon(Icons.send_rounded, color: Colors.white, size: 22),
-        ),
       ),
     ]),
   );
@@ -504,15 +789,24 @@ class _MessageBubble extends StatelessWidget {
   final String myId;
   final bool isPrivate;
   final VoidCallback onLongPress;
+  final void Function(String reactionKey)? onReactionTap;
 
   const _MessageBubble({
     required this.msg, required this.isMe, required this.showAvatar,
     required this.showName, required this.myId, required this.isPrivate,
-    required this.onLongPress,
+    required this.onLongPress, this.onReactionTap,
   });
+
+  static const _reactionEmoji = {
+    'heart': '❤️', 'like': '👍', 'laugh': '😂',
+    'wow': '😮',   'sad': '😢',  'angry': '😡',
+  };
 
   @override
   Widget build(BuildContext context) {
+    final hasReactions = msg.reactions != null &&
+        msg.reactions!.entries.any((e) => (e.value as List?)?.isNotEmpty == true);
+
     return Padding(
       padding: EdgeInsets.only(top: showAvatar ? 8 : 2, bottom: 2),
       child: Row(
@@ -527,79 +821,159 @@ class _MessageBubble extends StatelessWidget {
             const SizedBox(width: 8),
           ],
 
-          Flexible(child: GestureDetector(
-            onLongPress: onLongPress,
-            child: Container(
-              constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.70),
-              decoration: BoxDecoration(
-                color: isMe ? const Color(0xFF7166D8) : const Color(0xFF18181B),
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isMe ? 18 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 18),
-                ),
-                border: isMe ? null : Border.all(color: const Color(0x1AFFFFFF)),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8, offset: const Offset(0, 2))],
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Имя (только в группах для чужих)
-                if (showName && msg.user != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 14, right: 14, top: 10, bottom: 2),
-                    child: Text(
-                      (msg.user!.displayName.isNotEmpty
-                          ? msg.user!.displayName
-                          : msg.user!.username).toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w700,
-                        color: Color(0xFF7166D8), letterSpacing: 0.8,
+          Flexible(child: Column(
+            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onLongPress: onLongPress,
+                child: Container(
+                  constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.70),
+                  decoration: BoxDecoration(
+                    color: isMe ? const Color(0xFF7166D8) : const Color(0xFF18181B),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isMe ? 18 : 4),
+                      bottomRight: Radius.circular(isMe ? 4 : 18),
+                    ),
+                    border: isMe ? null : Border.all(color: const Color(0x1AFFFFFF)),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8, offset: const Offset(0, 2))],
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    // Имя (только в группах для чужих)
+                    if (showName && msg.user != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 14, right: 14, top: 10, bottom: 2),
+                        child: Text(
+                          (msg.user!.displayName.isNotEmpty
+                              ? msg.user!.displayName
+                              : msg.user!.username).toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w700,
+                            color: Color(0xFF7166D8), letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+
+                    // Reply-цитата
+                    if (msg.replyTo != null) _buildReplyQuote(msg.replyTo!),
+
+                    // Контент
+                    Padding(
+                      padding: _contentPadding,
+                      child: _buildContent(),
+                    ),
+
+                    // Время + статус прочтения
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12, bottom: 8, left: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (msg.updatedAt != null &&
+                              msg.updatedAt!.difference(msg.createdAt).inMilliseconds > 2000)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Icon(Icons.edit, size: 12,
+                                  color: Colors.white.withOpacity(0.3)),
+                            ),
+                          Text(
+                            DateFormat('HH:mm').format(msg.createdAt),
+                            style: TextStyle(fontSize: 12,
+                                color: Colors.white.withOpacity(0.4)),
+                          ),
+                          if (isMe) ...[
+                            const SizedBox(width: 4),
+                            _buildReadStatus(),
+                          ],
+                        ],
                       ),
                     ),
-                  ),
-
-                // Контент
-                Padding(
-                  padding: _contentPadding,
-                  child: _buildContent(),
+                  ]),
                 ),
+              ),
 
-                // Время + статус прочтения
-                Padding(
-                  padding: const EdgeInsets.only(right: 12, bottom: 8, left: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      // Иконка редактирования
-                      if (msg.updatedAt != null &&
-                          msg.updatedAt!.difference(msg.createdAt).inMilliseconds > 2000)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Icon(Icons.edit, size: 12,
-                              color: Colors.white.withOpacity(0.3)),
-                        ),
-                      Text(
-                        DateFormat('HH:mm').format(msg.createdAt),
-                        style: TextStyle(fontSize: 12,
-                            color: Colors.white.withOpacity(0.4)),
-                      ),
-                      // Read receipts — только для своих
-                      if (isMe) ...[
-                        const SizedBox(width: 4),
-                        _buildReadStatus(),
-                      ],
-                    ],
-                  ),
-                ),
-              ]),
-            ),
+              // Реакции под пузырём
+              if (hasReactions) _buildReactions(),
+            ],
           )),
 
           if (isMe) const SizedBox(width: 4),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReplyQuote(Message replyTo) {
+    final name = replyTo.userId == myId ? 'Вы'
+        : (replyTo.user?.displayName.isNotEmpty == true
+            ? replyTo.user!.displayName
+            : replyTo.user?.username ?? 'Пользователь');
+    final content = replyTo.content.isNotEmpty ? replyTo.content
+        : replyTo.fileType == 'IMAGE' ? '🖼️ Фото'
+        : replyTo.fileType == 'VIDEO' ? '🎥 Видео'
+        : replyTo.fileType == 'AUDIO' ? '🎤 Голосовое'
+        : '📎 Файл';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.25),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: const Color(0xFF7166D8), width: 3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+            color: Color(0xFFBDB5F5))),
+        const SizedBox(height: 2),
+        Text(content, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.6))),
+      ]),
+    );
+  }
+
+  Widget _buildReactions() {
+    final entries = msg.reactions!.entries
+        .where((e) => (e.value as List?)?.isNotEmpty == true)
+        .toList();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(spacing: 4, runSpacing: 4,
+        children: entries.map((e) {
+          final users = (e.value as List).map((u) => u.toString()).toList();
+          final emoji = _reactionEmoji[e.key] ?? e.key;
+          final iMine = users.contains(myId);
+          return GestureDetector(
+            onTap: () => onReactionTap?.call(e.key),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: iMine
+                    ? Colors.white.withOpacity(0.2)
+                    : Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: iMine
+                      ? Colors.white.withOpacity(0.4)
+                      : Colors.white.withOpacity(0.1),
+                ),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(emoji, style: const TextStyle(fontSize: 14)),
+                if (users.length > 1) ...[
+                  const SizedBox(width: 4),
+                  Text('${users.length}',
+                      style: const TextStyle(fontSize: 12, color: Colors.white,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ]),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -688,4 +1062,53 @@ class _AttachBtn extends StatelessWidget {
           style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5))),
     ]),
   );
+}
+
+
+// ─── Typing Indicator ────────────────────────────────────────────────────────
+
+class _TypingIndicator extends StatefulWidget {
+  final List<String> names;
+  const _TypingIndicator({required this.names});
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
+      ..repeat(reverse: true);
+    _anim = Tween(begin: 0.3, end: 1.0).animate(_ctrl);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.names.length == 1
+        ? '${widget.names[0]} печатает...'
+        : '${widget.names.join(', ')} печатают...';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      color: _C.bg,
+      child: Row(children: [
+        FadeTransition(
+          opacity: _anim,
+          child: Row(children: List.generate(3, (i) => Container(
+            width: 6, height: 6, margin: const EdgeInsets.only(right: 3),
+            decoration: const BoxDecoration(color: _C.myBubble, shape: BoxShape.circle),
+          ))),
+        ),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+      ]),
+    );
+  }
 }

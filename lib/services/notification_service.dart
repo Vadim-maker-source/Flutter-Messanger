@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/chat_screen.dart';
 import '../screens/call_screen.dart';
 import '../models/chat.dart';
+import '../main.dart';
 
 // ─── Top-level callbacks (required by flutter_local_notifications & FCM) ──────
 
@@ -168,15 +169,18 @@ class NotificationService {
         builder: (_) => ChatScreen(chat: Chat.stub(data['chatId'] ?? '')),
       ));
     } else if (data['type'] == 'call') {
+      if (isCallSlotLocked()) return;
+      lockCallSlot();
       Navigator.of(ctx).push(MaterialPageRoute(
         builder: (_) => CallScreen(
           callId: data['callId'] ?? '',
+          chatId: data['chatId'] ?? '',
           callType: data['callType'] ?? 'audio',
           isIncoming: true,
           callerName: data['callerName'] ?? '',
           chatName: data['chatName'] ?? 'Звонок',
         ),
-      ));
+      )).then((_) => unlockCallSlot());
     }
   }
 

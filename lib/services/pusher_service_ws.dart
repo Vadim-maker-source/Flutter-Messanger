@@ -14,15 +14,23 @@ class PusherService {
 
   Future<void> _ensureConnected() async {
     if (_initialized) return;
+    print('[PUSHER] init key=$_key cluster=$_cluster');
     await _pusher.init(
       apiKey: _key,
       cluster: _cluster,
       onConnectionStateChange: (cur, prev) =>
-          print('[PUSHER] $prev -> $cur'),
+          print('[PUSHER] state $prev -> $cur'),
       onError: (msg, code, err) =>
-          print('[PUSHER] error: $msg code=$code'),
+          print('[PUSHER] error: $msg code=$code err=$err'),
+      onSubscriptionSucceeded: (channelName, data) =>
+          print('[PUSHER] subscribed to $channelName'),
+      onSubscriptionError: (msg, e) =>
+          print('[PUSHER] subscription error: $msg err=$e'),
+      onEvent: (event) =>
+          print('[PUSHER] event channel=${event.channelName} name=${event.eventName}'),
     );
     await _pusher.connect();
+    print('[PUSHER] connect() called');
     _initialized = true;
   }
 
@@ -124,14 +132,22 @@ class PusherService {
     String userId, {
     required void Function(Map<String, dynamic>) onIncomingCall,
     required void Function(Map<String, dynamic>) onOutgoingCall,
+    void Function(Map<String, dynamic>)? onWebRtcSignal,
   }) {
+    print('[PUSHER] subscribeToUserChannel userId=$userId');
     _sub('user-$userId', (event) {
+      print('[PUSHER] user-channel event=${event.eventName} data=${event.data}');
       final data = _parse(event.data);
       switch (event.eventName) {
         case 'incoming-call':
+          print('[PUSHER] -> incoming-call');
           onIncomingCall(data);
         case 'outgoing-call':
+          print('[PUSHER] -> outgoing-call');
           onOutgoingCall(data);
+        case 'webrtc-signal':
+          print('[PUSHER] -> webrtc-signal type=${data['type']}');
+          onWebRtcSignal?.call(data);
       }
     });
   }

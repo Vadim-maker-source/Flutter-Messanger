@@ -47,7 +47,7 @@ dependencies:
   intl: ^0.20.2
   web_socket_channel: ^3.0.1
   pusher_channels_flutter: ^2.0.0
-  stream_video_flutter: ^1.3.3
+  flutter_webrtc: ^0.14.2
 
   # Media — pick & record
   image_picker: ^1.1.2

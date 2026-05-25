@@ -8,7 +8,7 @@ import '../models/chat.dart';
 import '../models/message.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://kyro-messanger.vercel.app/api/mobile';
+  static const String baseUrl = 'http://192.168.0.109:3000/api/mobile';
 
   String? _token;
 
@@ -424,11 +424,12 @@ class ApiService {
 
   // ─── Calls ───────────────────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>?> getStreamToken() async {
+  Future<Map<String, dynamic>?> startCall(String chatId, String type) async {
     try {
       final res = await http.post(
-        Uri.parse('$baseUrl/calls/token'),
+        Uri.parse('$baseUrl/calls/webrtc/start'),
         headers: await _headers(),
+        body: jsonEncode({'chatId': chatId, 'type': type}),
       );
       final data = _decode(res);
       if (data != null && data['success'] == true) return data;
@@ -436,27 +437,41 @@ class ApiService {
     return null;
   }
 
-  Future<Map<String, dynamic>?> startCall(String chatId, String type) async {
+  Future<String?> fetchOffer(String callId) async {
     try {
-      final res = await http.post(
-        Uri.parse('$baseUrl/calls/stream'),
+      final res = await http.get(
+        Uri.parse('$baseUrl/calls/webrtc/offer?callId=$callId'),
         headers: await _headers(),
-        body: jsonEncode({'chatId': chatId, 'type': type}),
       );
       final data = _decode(res);
-      if (data != null && data['success'] == true) return data['data'];
+      if (data != null && data['success'] == true && data['hasOffer'] == true) {
+        return data['sdp'] as String?;
+      }
     } catch (_) {}
     return null;
   }
 
-  Future<void> updateCallStatus(String callId, String status) async {
+  /// Получает актуальную ICE-конфигурацию (STUN/TURN) с сервера.
+  /// Сервер читает её из переменных окружения, поэтому креды TURN не лежат в
+  /// клиентском коде. См. app/api/mobile/calls/ice-config/route.ts.
+  Future<Map<String, dynamic>?> fetchIceConfig() async {
     try {
-      await http.patch(
-        Uri.parse('$baseUrl/calls/status'),
+      final res = await http.get(
+        Uri.parse('$baseUrl/calls/ice-config'),
         headers: await _headers(),
-        body: jsonEncode({'callId': callId, 'status': status}),
       );
+      final data = _decode(res);
+      if (data != null && data['success'] == true && data['iceServers'] is List) {
+        return {
+          'iceServers': data['iceServers'],
+          'iceCandidatePoolSize': data['iceCandidatePoolSize'] ?? 2,
+          'bundlePolicy': data['bundlePolicy'] ?? 'max-bundle',
+          'rtcpMuxPolicy': data['rtcpMuxPolicy'] ?? 'require',
+          'sdpSemantics': 'unified-plan',
+        };
+      }
     } catch (_) {}
+    return null;
   }
 
   // ─── Upload ──────────────────────────────────────────────────────────────────

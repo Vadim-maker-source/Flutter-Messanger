@@ -8,7 +8,8 @@ import '../services/api_service.dart';
 import '../services/pusher_service_ws.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
-import '../main.dart' show AppColors;
+import '../main.dart' show AppColors, lockCallSlot, unlockCallSlot;
+import 'call_screen.dart';
 
 import 'media_recorder.dart';
 import 'media_widgets.dart';
@@ -529,13 +530,31 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _startCall(String type) async {
+    // Lock slot immediately so the Pusher outgoing-call echo is ignored
+    lockCallSlot();
     final data = await _api.startCall(widget.chat.id, type);
-    if (data == null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось начать звонок')),
-      );
+    if (data == null) {
+      unlockCallSlot();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось начать звонок')),
+        );
+      }
+      return;
     }
-    // CallScreen откроется через Pusher outgoing-call событие в main.dart
+    if (!mounted) { unlockCallSlot(); return; }
+    final callId = data['callId'] as String? ?? '';
+    // Open CallScreen directly — don't wait for Pusher outgoing-call
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CallScreen(
+        callId: callId,
+        chatId: widget.chat.id,
+        callType: type,
+        isIncoming: false,
+        callerName: '',
+        chatName: widget.chat.title,
+      ),
+    )).then((_) => unlockCallSlot());
   }
 
   PreferredSizeWidget _buildAppBar() {

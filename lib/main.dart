@@ -1,25 +1,22 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:stream_video_flutter/stream_video_flutter.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/call_screen.dart';
 import 'services/api_service.dart';
-import 'services/notification_service.dart';
 import 'services/pusher_service_ws.dart';
 
-// Глобальный navigatorKey для показа звонков поверх любого экрана
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final callPusher = PusherService();
+final apiService = ApiService();
 
-// Глобальный PusherService для звонков
-final _callPusher = PusherService();
-final _api = ApiService();
+typedef SignalCallback = void Function(Map<String, dynamic>);
+SignalCallback? onSignal;
+final List<Map<String, dynamic>> signalBuffer = [];
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
   await initializeDateFormatting('ru', null);
   runApp(const MyApp());
 }
@@ -28,260 +25,93 @@ class AppColors {
   static const primary = Color(0xFF6C3EF4);
   static const secondary = Color(0xFFB98CFF);
   static const darkAccent = Color(0xFF4B1FD1);
-  static const background = Color(0xFF1D2733);
-  static const surface = Color(0xFF1D2733);
+  static const background = Color(0xFF09090B);
+  static const surface = Color(0xFF18181B);
   static const surfaceAlt = Color(0xFF27272A);
   static const border = Color(0xFF3F3F46);
   static const muted = Color(0xFF71717A);
   static const scrollbar = Color(0xFF7166D8);
-  static const searchbar = Color(0xFF2D3542);
+  static const searchbar = Color(0xFF27272A);
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Messenger',
-      debugShowCheckedModeBanner: false,
-      navigatorKey: navigatorKey,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: AppColors.background,
-        fontFamily: 'Nunito',
-        colorScheme: const ColorScheme.dark(
-          primary: AppColors.primary,
-          secondary: AppColors.secondary,
-          surface: AppColors.surface,
-          onSurface: Colors.white,
-          onPrimary: Colors.white,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.background,
-          elevation: 0,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Nunito',
-          ),
-          iconTheme: IconThemeData(color: Colors.white),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: AppColors.surfaceAlt,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
-          ),
-          hintStyle: const TextStyle(color: AppColors.muted),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            textStyle: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w600),
-          ),
-        ),
-        listTileTheme: const ListTileThemeData(
-          tileColor: Colors.transparent,
-          textColor: Colors.white,
-          iconColor: AppColors.muted,
-        ),
-        dividerColor: AppColors.surfaceAlt,
-        useMaterial3: true,
-      ),
-      home: const _Splash(),
-    );
+  @override Widget build(BuildContext context) {
+    return MaterialApp(title: 'Messenger', debugShowCheckedModeBanner: false, navigatorKey: navigatorKey,
+      theme: ThemeData(brightness: Brightness.dark, scaffoldBackgroundColor: AppColors.background, fontFamily: 'Nunito',
+        colorScheme: const ColorScheme.dark(primary: AppColors.primary, secondary: AppColors.secondary, surface: AppColors.surface, onSurface: Colors.white, onPrimary: Colors.white),
+        appBarTheme: const AppBarTheme(backgroundColor: AppColors.background, elevation: 0, titleTextStyle: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Nunito'), iconTheme: IconThemeData(color: Colors.white)),
+        inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: AppColors.surfaceAlt, border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.primary, width: 2)), hintStyle: const TextStyle(color: AppColors.muted)),
+        elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w600))),
+        listTileTheme: const ListTileThemeData(tileColor: Colors.transparent, textColor: Colors.white, iconColor: AppColors.muted), dividerColor: AppColors.surfaceAlt, useMaterial3: true),
+      home: const _Splash());
   }
 }
 
-class _Splash extends StatefulWidget {
-  const _Splash();
-
-  @override
-  State<_Splash> createState() => _SplashState();
-}
-
+class _Splash extends StatefulWidget { const _Splash(); @override State<_Splash> createState() => _SplashState(); }
 class _SplashState extends State<_Splash> {
-  @override
-  void initState() {
-    super.initState();
-    _check();
-  }
-
+  @override void initState() { super.initState(); _check(); }
   Future<void> _check() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-    final userId = prefs.getString('user_id');
+    final token = prefs.getString('auth_token'); final userId = prefs.getString('user_id');
     if (!mounted) return;
-
-    if (token != null && userId != null) {
-      await _initStreamAndCalls(userId);
-      if (!mounted) return;
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
-    } else {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
-    }
+    if (token != null && userId != null) { await _init(userId); if (!mounted) return; Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen())); }
+    else Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-    );
-  }
+  @override Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator(color: AppColors.primary)));
 }
 
-/// Инициализирует Stream SDK и подписывается на Pusher-события звонков.
-/// Вызывается после логина и при старте если уже авторизован.
-bool _callsInitialized = false;
-
-Future<void> _initStreamAndCalls(String userId) async {
-  if (_callsInitialized) return;
-  _callsInitialized = true;
-
-  // Init FCM notifications
-  await NotificationService.init(navigatorKey);
-  final fcmToken = await NotificationService.getToken();
-  print('[FCM] token: $fcmToken');
-  if (fcmToken != null) {
-    await _api.saveFcmToken(fcmToken);
-    print('[FCM] token saved to server');
-  } else {
-    print('[FCM] token is NULL — notifications will not work');
-  }
-
-  final tokenData = await _api.getStreamToken();
-  if (tokenData == null) {
-    print('[CALLS] getStreamToken returned null — check /calls/token endpoint');
-    return;
-  }
-
-  final streamToken = tokenData['token'] as String;
-  final apiKey = tokenData['apiKey'] as String;
-
-  // Инициализируем Stream SDK
-  final prefs = await SharedPreferences.getInstance();
-  final displayName = prefs.getString('user_display_name') ?? userId;
-
-  StreamVideo.reset(disconnect: false);
-  StreamVideo(
-    apiKey,
-    user: User.regular(
-      userId: userId,
-      name: displayName,
-    ),
-    userToken: streamToken,
-    // options: const StreamVideoOptions(
-    //   iceServers: [
-    //     RTCIceServer(
-    //       urls: ['turn:ВАШ_IP:3478', 'turns:ВАШ_IP:5349'],
-    //       username: 'turnuser',
-    //       credential: 'turnpassword',
-    //     ),
-    //     RTCIceServer(urls: ['stun:stun.l.google.com:19302']),
-    //   ],
-    // ),
-  );
-
-  // Подписываемся на Pusher-события звонков
-  _callPusher.subscribeToUserChannel(
-    userId,
-    onIncomingCall: (data) => _handleIncomingCall(data),
-    onOutgoingCall: (data) => _handleOutgoingCall(data),
+bool _initDone = false;
+Future<void> _init(String userId) async {
+  if (_initDone) return; _initDone = true;
+  callPusher.subscribeToUserChannel(userId,
+    onIncomingCall: _onIn,
+    onOutgoingCall: _onOut,
+    onWebRtcSignal: (data) { signalBuffer.add(data); onSignal?.call(data); },
   );
 }
 
-bool _callScreenOpen = false;
+bool _open = false;
 
-void _handleIncomingCall(Map<String, dynamic> data) {
-  print('[CALLS] incoming-call received: $data');
-  if (_callScreenOpen) { print('[CALLS] screen already open, skipping'); return; }
-  final callId = data['callId'] as String? ?? '';
-  final type = data['type'] as String? ?? 'audio';
-  final chatName = data['chatName'] as String? ?? 'Звонок';
-  final from = data['from'] as Map<String, dynamic>? ?? {};
-  final callerName = (from['displayName'] ?? from['username'] ?? 'Неизвестный') as String;
+// Called from chat_screen before API call to lock the slot
+void lockCallSlot() { _open = true; }
+void unlockCallSlot() { _open = false; }
+bool isCallSlotLocked() => _open;
 
-  _openCallScreen(
-    callId: callId,
-    callType: type,
-    isIncoming: true,
-    callerName: callerName,
-    chatName: chatName,
-  );
+void _onIn(Map<String, dynamic> d) {
+  if (_open) return;
+  final cid = d['callId'] as String? ?? '';
+  final ct = d['type'] as String? ?? 'audio';
+  final cn = d['chatName'] as String? ?? '';
+  final from = d['from'] as Map<String, dynamic>? ?? {};
+  final caller = (from['displayName'] ?? from['username'] ?? '') as String;
+  final chatId = d['chatId'] as String? ?? '';
+  _nav(cid, chatId, ct, true, caller, cn);
 }
 
-void _handleOutgoingCall(Map<String, dynamic> data) {
-  print('[CALLS] outgoing-call received: $data');
-  if (_callScreenOpen) { print('[CALLS] screen already open, skipping'); return; }
-  final callId = data['callId'] as String? ?? '';
-  final type = data['type'] as String? ?? 'audio';
-  final chatName = data['chatName'] as String? ?? 'Звонок';
-
-  _openCallScreen(
-    callId: callId,
-    callType: type,
-    isIncoming: false,
-    callerName: '',
-    chatName: chatName,
-  );
+void _onOut(Map<String, dynamic> d) {
+  // If _open is already true, the outgoing call was started from chat_screen
+  // and CallScreen is already open — ignore this Pusher echo.
+  if (_open) return;
+  final cid = d['callId'] as String? ?? '';
+  final ct = d['type'] as String? ?? 'audio';
+  final cn = d['chatName'] as String? ?? '';
+  final chatId = d['chatId'] as String? ?? '';
+  _nav(cid, chatId, ct, false, '', cn);
 }
 
-void _openCallScreen({
-  required String callId,
-  required String callType,
-  required bool isIncoming,
-  required String callerName,
-  required String chatName,
-}) {
-  print('[CALLS] _openCallScreen callId=$callId ctx=${navigatorKey.currentContext}');
-  _callScreenOpen = true;
-
-  // Используем addPostFrameCallback чтобы гарантировать готовность контекста
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) {
-      print('[CALLS] context is null, cannot navigate');
-      _callScreenOpen = false;
-      return;
-    }
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => CallScreen(
-          callId: callId,
-          callType: callType,
-          isIncoming: isIncoming,
-          callerName: callerName,
-          chatName: chatName,
-        ),
-      ),
-    ).then((_) => _callScreenOpen = false);
-  });
+void _nav(String cid, String chatId, String ct, bool inc, String caller, String cn) {
+  _open = true;
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null) { _open = false; return; }
+  Navigator.of(ctx).push(MaterialPageRoute(
+    builder: (_) => CallScreen(callId: cid, chatId: chatId, callType: ct, isIncoming: inc, callerName: caller, chatName: cn),
+  )).then((_) => _open = false);
 }
 
-/// Вызывается из LoginScreen после успешного входа
 Future<void> initCallsAfterLogin(String userId, String displayName) async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('user_id', userId);
-  await prefs.setString('user_display_name', displayName);
-  await _initStreamAndCalls(userId);
+  await prefs.setString('user_id', userId); await prefs.setString('user_display_name', displayName);
+  await _init(userId);
 }
-
-/// Вызывается при выходе из аккаунта
-void disposeCallsOnLogout(String userId) {
-  _callPusher.unsubscribeFromUserChannel(userId);
-  StreamVideo.reset(disconnect: true);
-  _callsInitialized = false;
-}
+void disposeCallsOnLogout(String userId) { callPusher.unsubscribeFromUserChannel(userId); _initDone = false; }

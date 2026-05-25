@@ -159,9 +159,14 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
 
   Future<MediaStream?> _getMedia() async {
     if (_isVideo) {
+      // 720p — оптимальный баланс между качеством и нагрузкой на encoder
+      // мобильного устройства. 1080p многие мобильные encoder'ы не тянут
+      // в реальном времени, и это срывает ICE/DTLS handshake (видно как
+      // «вечный Checking»). Если на устройстве топовый chip — 1080p пойдёт
+      // как первая попытка.
       for (final cfg in [
-        {'audio': true, 'video': {'width': 1280, 'height': 720, 'facingMode': 'user'}},
-        {'audio': true, 'video': {'width': 640, 'height': 480, 'facingMode': 'user'}},
+        {'audio': true, 'video': {'width': 1280, 'height': 720, 'frameRate': 30, 'facingMode': 'user'}},
+        {'audio': true, 'video': {'width': 640, 'height': 480, 'frameRate': 30, 'facingMode': 'user'}},
         {'audio': true, 'video': true},
       ]) {
         try { return await navigator.mediaDevices.getUserMedia(cfg as Map<String, dynamic>); } catch (_) {}
@@ -169,6 +174,40 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     }
     try { return await navigator.mediaDevices.getUserMedia({'audio': true, 'video': false}); } catch (_) {}
     return null;
+  }
+
+  // Применяем максимальные битрейты к sender'ам PC. Вызывается ПОСЛЕ
+  // setLocalDescription. Без этого WebRTC по дефолту шлёт ~1 Мбит/с видео,
+  // что выглядит как блюр на 720p+.
+  static const _videoMaxBitrate = 2500000;  // 2.5 Mbps — норм для 720p мобила
+  static const _audioMaxBitrate = 64000;    // 64 kbps — Opus high-quality
+
+  Future<void> _tuneSenders(RTCPeerConnection pc) async {
+    try {
+      final senders = await pc.getSenders();
+      for (final sender in senders) {
+        final track = sender.track;
+        if (track == null) continue;
+        try {
+          final params = sender.parameters;
+          if (params.encodings == null || params.encodings!.isEmpty) {
+            params.encodings = [RTCRtpEncoding()];
+          }
+          if (track.kind == 'video') {
+            params.encodings![0].maxBitrate = _videoMaxBitrate;
+            params.encodings![0].maxFramerate = 30;
+            params.degradationPreference = RTCDegradationPreference.MAINTAIN_FRAMERATE;
+          } else if (track.kind == 'audio') {
+            params.encodings![0].maxBitrate = _audioMaxBitrate;
+          }
+          await sender.setParameters(params);
+        } catch (e) {
+          debugPrint('[CALL] tune sender error: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[CALL] _tuneSenders error: $e');
+    }
   }
 
   // ─── PeerConnection ───────────────────────────────────────────────────────────
@@ -363,6 +402,7 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     _pc = pc;
     final offer = await pc.createOffer({});
     await pc.setLocalDescription(offer);
+    await _tuneSenders(pc);
     if (_left) return;
     await _sendSignal('offer', {'sdp': offer.sdp});
     _localOfferSent = true;
@@ -452,6 +492,7 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
       _remoteDescSet = true;
       final answer = await _pc!.createAnswer({});
       await _pc!.setLocalDescription(answer);
+      await _tuneSenders(_pc!);
       await _sendSignal('answer', {'sdp': answer.sdp});
       _localAnswerSent = true;
       debugPrint('[CALL] answer sent (callId=${widget.callId})');

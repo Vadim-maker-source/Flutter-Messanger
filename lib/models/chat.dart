@@ -5,7 +5,8 @@ class Chat {
   final String? lastMessage;
   final String type;
   final int unreadCount;
-  final String? role; // CREATOR, ADMIN, MEMBER
+  final String? role;
+  final String? partnerId; // ID собеседника в приватном чате
 
   Chat({
     required this.id,
@@ -15,6 +16,7 @@ class Chat {
     required this.type,
     this.unreadCount = 0,
     this.role,
+    this.partnerId,
   });
 
   factory Chat.fromJson(Map<String, dynamic> json) {
@@ -25,10 +27,10 @@ class Chat {
       lastMessage: json['lastMessage'],
       type: json['type'] ?? 'PRIVATE',
       role: json['role'],
+      partnerId: json['partnerId'],
     );
   }
 
-  /// Minimal stub used when navigating from a notification (only id is known).
   factory Chat.stub(String id) => Chat(id: id, title: '', type: 'PRIVATE');
 
   factory Chat.fromSidebar(Map<String, dynamic> json) {
@@ -40,6 +42,7 @@ class Chat {
       type: json['type'] ?? 'PRIVATE',
       unreadCount: json['unreadCount'] ?? 0,
       role: json['role'],
+      partnerId: json['partnerId'],
     );
   }
 }

@@ -225,15 +225,35 @@ class ApiService {
     } catch (_) { return false; }
   }
 
-  Future<bool> forwardMessage(String messageId, List<String> chatIds) async {
+  /// Перенаправить сообщение в один чат. API принимает один targetChatId
+  /// за вызов — для нескольких чатов нужен цикл вызовов на стороне UI.
+  Future<bool> forwardMessage(String messageId, String targetChatId) async {
     try {
       final res = await http.post(
         Uri.parse('$baseUrl/messages/forward'),
         headers: await _headers(),
-        body: jsonEncode({'messageId': messageId, 'chatIds': chatIds}),
+        body: jsonEncode({'messageId': messageId, 'targetChatId': targetChatId}),
       );
       return _decode(res)?['success'] == true;
     } catch (_) { return false; }
+  }
+
+  /// Все чаты пользователя с флагом `canWrite` — для пересылки и шеринга
+  /// контента из других приложений.
+  Future<List<Map<String, dynamic>>> getAvailableChats() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/chats/available'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true && data?['data'] is List) {
+        return (data!['data'] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+    } catch (_) {}
+    return <Map<String, dynamic>>[];
   }
 
   Future<void> saveFcmToken(String token) async {
@@ -492,5 +512,173 @@ class ApiService {
       if (json['success'] == true) return {'url': json['url'], 'fileName': json['fileName']};
     } catch (_) {}
     return null;
+  }
+
+  // ─── User Profile ────────────────────────────────────────────────────────────
+
+  /// Полный профиль другого пользователя.
+  /// Возвращает уже распакованный `data` объект (см. web shape getUserProfile).
+  Future<Map<String, dynamic>?> getUserProfile(String userId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/users/$userId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true && data?['data'] is Map) {
+        return Map<String, dynamic>.from(data!['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Медиа-файлы из приватного чата с пользователем.
+  /// Возвращает `{ photos: [], videos: [], files: [], audio: [] }`.
+  Future<Map<String, dynamic>?> getUserMediaFiles(String userId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/users/media?userId=$userId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true && data?['data'] is Map) {
+        return Map<String, dynamic>.from(data!['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Существующий приватный чат с пользователем или создание нового.
+  /// Возвращает чат-объект `{ id, name, type, imageUrl, ... }`.
+  Future<Map<String, dynamic>?> getOrCreatePrivateChat(String partnerId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/chats/private'),
+        headers: await _headers(),
+        body: jsonEncode({'partnerId': partnerId}),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true && data?['chat'] is Map) {
+        return Map<String, dynamic>.from(data!['chat'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Статус блокировки между текущим пользователем и `targetId`.
+  /// `{ iBlockedThem: bool, theyBlockedMe: bool }`.
+  Future<Map<String, bool>> getBlockStatus(String targetId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/users/block?targetId=$targetId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true && data?['data'] is Map) {
+        final d = data!['data'] as Map;
+        return {
+          'iBlockedThem': d['iBlockedThem'] == true,
+          'theyBlockedMe': d['theyBlockedMe'] == true,
+        };
+      }
+    } catch (_) {}
+    return {'iBlockedThem': false, 'theyBlockedMe': false};
+  }
+
+  Future<bool> blockUser(String targetId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/users/block'),
+        headers: await _headers(),
+        body: jsonEncode({'targetId': targetId}),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> unblockUser(String targetId) async {
+    try {
+      final req = http.Request('DELETE', Uri.parse('$baseUrl/users/block'))
+        ..headers.addAll(await _headers())
+        ..body = jsonEncode({'targetId': targetId});
+      final streamed = await req.send();
+      final body = await streamed.stream.bytesToString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      return data['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  // ─── Chat Details ────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>?> getChatDetails(String chatId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/chats/$chatId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true) return data?['data'] as Map<String, dynamic>?;
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> leaveChat(String chatId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/chats/members'),
+        headers: await _headers(),
+        body: jsonEncode({'chatId': chatId}),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  // ─── Chat/Server management ─────────────────────────────────────────────────
+
+  Future<bool> updateChat(String chatId, {String? name, String? imageUrl, String? access}) async {
+    try {
+      final body = <String, dynamic>{};
+      if (name != null) body['name'] = name;
+      if (imageUrl != null) body['imageUrl'] = imageUrl;
+      if (access != null) body['access'] = access;
+      final res = await http.patch(
+        Uri.parse('$baseUrl/chats/$chatId'),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> deleteChat(String chatId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/chats/$chatId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> createServerChannel(String serverId, {required String name, required String type}) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$baseUrl/chats/server'),
+        headers: await _headers(),
+        body: jsonEncode({'serverId': serverId, 'name': name, 'type': type}),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
   }
 }

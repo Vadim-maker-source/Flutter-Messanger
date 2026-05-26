@@ -31,6 +31,14 @@ class Message {
   final List<ReadReceipt> readReceipts;
   final Map<String, dynamic>? reactions;
 
+  // Поля для пересланных сообщений (заполняются API-ом forward).
+  final String? forwardedFromMessageId;
+  final String? forwardedFromChatId;
+  final String? forwardedFromChatName;
+  final String? forwardedFromChatType;
+  final String? forwardedFromUserId;
+  final String? forwardedFromUserName;
+
   Message({
     required this.id,
     required this.content,
@@ -47,7 +55,61 @@ class Message {
     this.deleted = false,
     this.readReceipts = const [],
     this.reactions,
+    this.forwardedFromMessageId,
+    this.forwardedFromChatId,
+    this.forwardedFromChatName,
+    this.forwardedFromChatType,
+    this.forwardedFromUserId,
+    this.forwardedFromUserName,
   });
+
+  bool get isForwarded =>
+      forwardedFromChatName != null || forwardedFromUserName != null;
+
+  /// Возвращает копию с переопределёнными полями. Полезно при обновлении
+  /// сообщения (новые reactions / readReceipts / редактирование) — все поля
+  /// о пересылке и пр. сохраняются автоматически.
+  Message copyWith({
+    String? id,
+    String? content,
+    String? fileUrl,
+    String? fileName,
+    String? fileType,
+    String? userId,
+    User? user,
+    String? chatId,
+    String? replyToId,
+    Message? replyTo,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    bool? deleted,
+    List<ReadReceipt>? readReceipts,
+    Map<String, dynamic>? reactions,
+  }) {
+    return Message(
+      id: id ?? this.id,
+      content: content ?? this.content,
+      fileUrl: fileUrl ?? this.fileUrl,
+      fileName: fileName ?? this.fileName,
+      fileType: fileType ?? this.fileType,
+      userId: userId ?? this.userId,
+      user: user ?? this.user,
+      chatId: chatId ?? this.chatId,
+      replyToId: replyToId ?? this.replyToId,
+      replyTo: replyTo ?? this.replyTo,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
+      readReceipts: readReceipts ?? this.readReceipts,
+      reactions: reactions ?? this.reactions,
+      forwardedFromMessageId: forwardedFromMessageId,
+      forwardedFromChatId: forwardedFromChatId,
+      forwardedFromChatName: forwardedFromChatName,
+      forwardedFromChatType: forwardedFromChatType,
+      forwardedFromUserId: forwardedFromUserId,
+      forwardedFromUserName: forwardedFromUserName,
+    );
+  }
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(
     id: json['id'],
@@ -67,6 +129,12 @@ class Message {
         .map((r) => ReadReceipt.fromJson(r))
         .toList(),
     reactions: json['reactions'] as Map<String, dynamic>?,
+    forwardedFromMessageId: json['forwardedFromMessageId'] as String?,
+    forwardedFromChatId: json['forwardedFromChatId'] as String?,
+    forwardedFromChatName: json['forwardedFromChatName'] as String?,
+    forwardedFromChatType: json['forwardedFromChatType'] as String?,
+    forwardedFromUserId: json['forwardedFromUserId'] as String?,
+    forwardedFromUserName: json['forwardedFromUserName'] as String?,
   );
 
   bool isReadBy(String userId) => readReceipts.any((r) => r.userId == userId);

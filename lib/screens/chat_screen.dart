@@ -9,7 +9,11 @@ import '../services/pusher_service_ws.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../main.dart' show AppColors, lockCallSlot, unlockCallSlot;
+import '../widgets/colored_avatar.dart';
 import 'call_screen.dart';
+import 'user_profile_screen.dart';
+import 'chat_info_screen.dart';
+import 'chat_picker_screen.dart';
 
 import 'media_recorder.dart';
 import 'media_widgets.dart';
@@ -34,6 +38,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _uploading = false;
   String? _myId;
   final Set<String> _sentIds = {};
+  final Set<String> _pendingContents = {}; // тексты сообщений в процессе отправки (для дедупликации)
 
   // Typing indicator
   final Map<String, String> _typingUsers = {}; // userId -> displayName
@@ -103,8 +108,15 @@ class _ChatScreenState extends State<ChatScreen> {
       onNewMessage: (data) {
         if (!mounted) return;
         final msg = Message.fromJson(data);
-        if (_sentIds.contains(msg.id)) { _sentIds.remove(msg.id); return; }
+        // Дедупликация: проверяем и по _sentIds, и по уже существующим в списке,
+        // и по pending-контенту (если Socket.io прилетел раньше HTTP-ответа)
+        if (_sentIds.remove(msg.id)) return;
         if (_messages.any((m) => m.id == msg.id)) return;
+        if (msg.userId == _myId && _pendingContents.contains(msg.content)) {
+          _sentIds.add(msg.id); // запомним id чтобы не добавить повторно из HTTP-ответа
+          _pendingContents.remove(msg.content);
+          return;
+        }
         setState(() => _messages.add(msg));
         _scrollToBottom(animate: true);
         _api.markAsRead(widget.chat.id);
@@ -129,12 +141,11 @@ class _ChatScreenState extends State<ChatScreen> {
               final msg = _messages[i];
               final alreadyRead = msg.readReceipts.any((r) => r.userId != _myId);
               if (!alreadyRead) {
-                _messages[i] = Message(
-                  id: msg.id, chatId: msg.chatId, userId: msg.userId,
-                  content: msg.content, createdAt: msg.createdAt,
-                  updatedAt: msg.updatedAt, user: msg.user,
-                  fileUrl: msg.fileUrl, fileType: msg.fileType,
-                  readReceipts: [...msg.readReceipts, ReadReceipt(userId: _myId ?? '', readAt: DateTime.now())],
+                _messages[i] = msg.copyWith(
+                  readReceipts: [
+                    ...msg.readReceipts,
+                    ReadReceipt(userId: _myId ?? '', readAt: DateTime.now()),
+                  ],
                 );
               }
             }
@@ -154,13 +165,7 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           final i = _messages.indexWhere((m) => m.id == messageId);
           if (i != -1) {
-            final m = _messages[i];
-            _messages[i] = Message(
-              id: m.id, chatId: m.chatId, userId: m.userId,
-              content: m.content, createdAt: m.createdAt, updatedAt: m.updatedAt,
-              user: m.user, fileUrl: m.fileUrl, fileType: m.fileType,
-              readReceipts: m.readReceipts, reactions: reactions,
-            );
+            _messages[i] = _messages[i].copyWith(reactions: reactions);
           }
         });
       },
@@ -214,7 +219,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _stopTyping();
     final replyId = _replyingTo?.id;
     setState(() => _replyingTo = null);
+    // Помечаем что ожидаем сообщение с таким текстом — если Socket.io
+    // доставит его раньше чем вернётся HTTP-ответ, дедупликация сработает.
+    _pendingContents.add(text);
     final msg = await _api.sendMessage(widget.chat.id, text, replyToId: replyId);
+    _pendingContents.remove(text);
     if (msg != null && mounted) {
       _sentIds.add(msg.id);
       setState(() => _messages.add(msg));
@@ -386,20 +395,21 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _showForwardDialog(Message msg) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surfaceAlt,
-        title: const Text('Переслать в...', style: TextStyle(color: Colors.white)),
-        content: const Text('Функция пересылки: выберите чат в списке',
-            style: TextStyle(color: Colors.white54, fontSize: 13)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context),
-              child: const Text('Закрыть', style: TextStyle(color: AppColors.primary))),
-        ],
+  Future<void> _showForwardDialog(Message msg) async {
+    final count = await Navigator.push<int>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPickerScreen(
+          forwardMessageId: msg.id,
+          excludeChatId: widget.chat.id,
+        ),
       ),
     );
+    if (!mounted) return;
+    if (count != null && count > 0) {
+      // Снек-уведомление уже показано внутри ChatPickerScreen.
+      // Здесь можно добавить какую-то реакцию, например анимацию.
+    }
   }
 
   void _toggleReaction(Message msg, String reactionKey) {
@@ -437,12 +447,9 @@ class _ChatScreenState extends State<ChatScreen> {
     await _api.editMessage(msg.id, text);
     if (mounted) setState(() {
       final i = _messages.indexWhere((m) => m.id == msg.id);
-      if (i != -1) _messages[i] = Message(
-        id: msg.id, chatId: msg.chatId, userId: msg.userId,
-        content: text, createdAt: msg.createdAt, updatedAt: DateTime.now(),
-        user: msg.user, fileUrl: msg.fileUrl, fileType: msg.fileType,
-        readReceipts: msg.readReceipts, reactions: msg.reactions,
-      );
+      if (i != -1) {
+        _messages[i] = msg.copyWith(content: text, updatedAt: DateTime.now());
+      }
     });
   }
 
@@ -465,7 +472,19 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: _buildAppBar(),
-      body: Column(children: [
+      body: Container(
+        // Фон чата — тёмно-синий как в Telegram dark theme
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF17212B),  // тёмно-синий (Telegram-стиль)
+              Color(0xFF0E1621),  // чуть темнее к низу
+            ],
+          ),
+        ),
+        child: Column(children: [
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
@@ -525,8 +544,29 @@ class _ChatScreenState extends State<ChatScreen> {
             ]),
           ),
         if (canWrite) _buildInput() else _buildReadOnly(),
-      ]),
+      ])),
     );
+  }
+
+  void _openChatInfo() {
+    if (widget.chat.type == 'PRIVATE') {
+      // Для приватного чата — открываем профиль собеседника
+      final partnerId = widget.chat.partnerId;
+      if (partnerId != null && partnerId.isNotEmpty) {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => UserProfileScreen(
+            userId: partnerId,
+            displayName: widget.chat.title,
+            avatarUrl: widget.chat.imageUrl,
+          ),
+        ));
+      }
+    } else {
+      // Для группы/канала — открываем инфо чата
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ChatInfoScreen(chat: widget.chat),
+      ));
+    }
   }
 
   Future<void> _startCall(String type) async {
@@ -570,16 +610,16 @@ class _ChatScreenState extends State<ChatScreen> {
           border: Border(bottom: BorderSide(color: AppColors.border)),
         ),
       ),
-      title: Row(children: [
+      title: GestureDetector(
+        onTap: _openChatInfo,
+        child: Row(children: [
         // Аватар
         Stack(children: [
-          widget.chat.imageUrl != null
-              ? CircleAvatar(backgroundImage: NetworkImage(widget.chat.imageUrl!), radius: 22)
-              : CircleAvatar(radius: 22, backgroundColor: const Color(0x206C3EF4),
-                  child: Text(
-                    widget.chat.title.isNotEmpty ? widget.chat.title[0].toUpperCase() : '?',
-                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 16),
-                  )),
+          ColoredAvatar(
+            imageUrl: widget.chat.imageUrl,
+            title: widget.chat.title,
+            size: 44,
+          ),
         ]),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -598,7 +638,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ])),
-      ]),
+      ])),
       actions: [
         IconButton(
           icon: const Icon(Icons.phone, color: Colors.white),
@@ -625,16 +665,23 @@ class _ChatScreenState extends State<ChatScreen> {
   );
 
   Widget _buildInput() => Container(
-    color: AppColors.background,
+    padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+    decoration: BoxDecoration(
+      color: const Color(0xFF17212B),
+      border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+    ),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       // Reply preview
       if (_replyingTo != null)
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
+          ),
           child: Row(children: [
-            Container(width: 3, height: 36, decoration: BoxDecoration(
-                color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                 _replyingTo!.userId == _myId ? 'Вы' :
@@ -649,88 +696,95 @@ class _ChatScreenState extends State<ChatScreen> {
                     : _replyingTo!.fileType == 'VIDEO' ? '🎥 Видео'
                     : _replyingTo!.fileType == 'AUDIO' ? '🎤 Голосовое'
                     : '📎 Файл',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
               ),
             ])),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-              onPressed: _cancelReply,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
+            IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+              onPressed: _cancelReply, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
           ]),
         ),
       // Edit preview
       if (_editingMsg != null)
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: Colors.orange, width: 3)),
+          ),
           child: Row(children: [
-            Container(width: 3, height: 36, decoration: BoxDecoration(
-                color: Colors.orange, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('Редактирование', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange)),
               Text(_editingMsg!.content, maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
             ])),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-              onPressed: _cancelEdit,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
+            IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+              onPressed: _cancelEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
           ]),
         ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Row(children: [
-          GestureDetector(
-            onTap: _showAttachMenu,
-            child: Container(
-              width: 46, height: 46,
-              decoration: BoxDecoration(color: const Color(0xFF2D3542), shape: BoxShape.circle),
-              child: const Icon(Icons.attach_file_rounded, color: Colors.white, size: 22),
-            ),
+      // Input row — Telegram style
+      Row(children: [
+        // Attach button
+        GestureDetector(
+          onTap: _showAttachMenu,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Icon(Icons.attach_file_rounded, color: Colors.white.withValues(alpha: 0.5), size: 24),
           ),
-          const SizedBox(width: 8),
-          Expanded(child: Container(
-            decoration: BoxDecoration(color: const Color(0xFF2D3542), borderRadius: BorderRadius.circular(30)),
-            child: Row(children: [
-              const SizedBox(width: 20),
-              Expanded(child: TextField(
-                controller: _ctrl,
-                focusNode: _focusNode,
-                maxLines: null,
-                textCapitalization: TextCapitalization.sentences,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
-                onChanged: _onTextChanged,
-                decoration: InputDecoration(
-                  hintText: 'Сообщение...',
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onSubmitted: (_) => _send(),
-              )),
-              const SizedBox(width: 8),
-            ]),
-          )),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: _send,
-            child: Container(
-              width: 46, height: 46,
-              decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-              child: const Icon(Icons.send_rounded, color: Colors.white, size: 22),
-            ),
+        ),
+        const SizedBox(width: 4),
+        // Text field — rounded, transparent bg
+        Expanded(child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-        ]),
-      ),
+          child: Row(children: [
+            const SizedBox(width: 16),
+            Expanded(child: TextField(
+              controller: _ctrl,
+              focusNode: _focusNode,
+              maxLines: 4,
+              minLines: 1,
+              textCapitalization: TextCapitalization.sentences,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              onChanged: _onTextChanged,
+              decoration: InputDecoration(
+                hintText: 'Введите сообщение...',
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                isDense: true,
+              ),
+              onSubmitted: (_) => _send(),
+            )),
+            const SizedBox(width: 8),
+          ]),
+        )),
+        const SizedBox(width: 8),
+        // Send button — purple circle
+        GestureDetector(
+          onTap: _send,
+          child: Container(
+            width: 44, height: 44,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF6C3EF4), Color(0xFF9B6DFF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+          ),
+        ),
+      ]),
     ]),
   );
 
@@ -830,16 +884,15 @@ class _MessageBubble extends StatelessWidget {
                   constraints: BoxConstraints(
                       maxWidth: MediaQuery.of(context).size.width * 0.70),
                   decoration: BoxDecoration(
-                    color: isMe ? AppColors.primary : AppColors.surface,
+                    color: isMe ? const Color(0xFF6C3EF4) : const Color(0xFF212D3B),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(18),
                       topRight: const Radius.circular(18),
                       bottomLeft: Radius.circular(isMe ? 18 : 4),
                       bottomRight: Radius.circular(isMe ? 4 : 18),
                     ),
-                    border: isMe ? null : Border.all(color: AppColors.border),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 8, offset: const Offset(0, 2))],
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 6, offset: const Offset(0, 2))],
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     // Имя (только в группах для чужих)
@@ -856,6 +909,9 @@ class _MessageBubble extends StatelessWidget {
 
                     // Reply-цитата
                     if (msg.replyTo != null) _buildReplyQuote(msg.replyTo!),
+
+                    // Бейдж «Переслано из ...» (только для пересланных сообщений)
+                    if (msg.isForwarded) _buildForwardedBadge(context),
 
                     // Контент
                     Padding(
@@ -875,12 +931,12 @@ class _MessageBubble extends StatelessWidget {
                             Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Icon(Icons.edit, size: 12,
-                                  color: Colors.white.withValues(alpha: 0.3)),
+                                  color: isMe ? const Color(0xFFB98CFF) : Colors.white.withValues(alpha: 0.3)),
                             ),
                           Text(
                             DateFormat('HH:mm').format(msg.createdAt),
                             style: TextStyle(fontSize: 12,
-                                color: Colors.white.withValues(alpha: 0.6)),
+                                color: isMe ? const Color(0xFFB98CFF) : Colors.white.withValues(alpha: 0.5)),
                           ),
                           if (isMe) ...[
                             const SizedBox(width: 4),
@@ -901,6 +957,33 @@ class _MessageBubble extends StatelessWidget {
           if (isMe) const SizedBox(width: 4),
         ],
       ),
+    );
+  }
+
+  Widget _buildForwardedBadge(BuildContext context) {
+    final source = msg.forwardedFromChatType == 'PRIVATE'
+        ? (msg.forwardedFromUserName ?? msg.forwardedFromChatName ?? 'Неизвестно')
+        : (msg.forwardedFromChatName ?? msg.forwardedFromUserName ?? 'Неизвестно');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.forward_rounded,
+            size: 12, color: AppColors.secondary.withValues(alpha: 0.8)),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            'Переслано из $source',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+              color: AppColors.secondary.withValues(alpha: 0.85),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -985,15 +1068,50 @@ class _MessageBubble extends StatelessWidget {
   Widget _buildContent() {
     if (msg.fileUrl != null) {
       switch (msg.fileType) {
-        case 'IMAGE': return ImageMessage(url: msg.fileUrl!);
-        case 'VIDEO': return VideoMessage(url: msg.fileUrl!);
+        case 'IMAGE': return _mediaWithBar(ImageMessage(url: msg.fileUrl!));
+        case 'VIDEO': return _mediaWithBar(VideoMessage(url: msg.fileUrl!));
         case 'ROUND': return RoundVideoMessage(url: msg.fileUrl!);
         case 'AUDIO': return AudioMessage(url: msg.fileUrl!, isMe: isMe);
-        default: return FileMessage(url: msg.fileUrl!, fileName: msg.fileName ?? msg.content, isMe: isMe);
+        default: return _buildFileCard();
       }
     }
-    return Text(msg.content,
-        style: const TextStyle(fontSize: 15, color: Colors.white, height: 1.4));
+    if (msg.content.isNotEmpty) {
+      return Text(msg.content,
+          style: const TextStyle(fontSize: 15, color: Colors.white, height: 1.4));
+    }
+    return const SizedBox.shrink();
+  }
+
+  /// Фиолетовая полоска под медиа (фото/видео) — как на веб-версии.
+  Widget _mediaWithBar(Widget media) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: media,
+      ),
+      Container(
+        height: 4,
+        margin: const EdgeInsets.only(top: 2),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF6C3EF4),
+              const Color(0xFF9B6DFF),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    ]);
+  }
+
+  /// Карточка файла — использует FileMessage из media_widgets (с реальным скачиванием).
+  Widget _buildFileCard() {
+    return FileMessage(
+      url: msg.fileUrl!,
+      fileName: msg.fileName ?? msg.content,
+      isMe: isMe,
+    );
   }
 
   // Галочки прочтения как в RealTimeChat

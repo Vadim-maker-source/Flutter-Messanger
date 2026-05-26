@@ -30,7 +30,8 @@ class _NewPrivateChatScreenState extends State<NewPrivateChatScreen> {
   }
 
   Future<void> _openChat(Map<String, dynamic> user) async {
-    final chat = await _api.createPrivateChat(user['id'] as String);
+    final partnerId = user['id'] as String;
+    final chat = await _api.createPrivateChat(partnerId);
     if (chat != null && mounted) {
       Navigator.pushReplacement(context, MaterialPageRoute(
         builder: (_) => ChatScreen(chat: Chat.fromJson({
@@ -38,6 +39,7 @@ class _NewPrivateChatScreenState extends State<NewPrivateChatScreen> {
           'title': user['displayName'] ?? user['username'],
           'imageUrl': user['avatarUrl'],
           'type': 'PRIVATE',
+          'partnerId': partnerId,
         })),
       ));
     }

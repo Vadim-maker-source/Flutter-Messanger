@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +9,8 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/call_screen.dart';
+import 'screens/share_chat_picker.dart';
+import 'screens/user_profile_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/pusher_service_ws.dart';
@@ -62,7 +66,92 @@ class MyApp extends StatelessWidget {
 
 class _Splash extends StatefulWidget { const _Splash(); @override State<_Splash> createState() => _SplashState(); }
 class _SplashState extends State<_Splash> {
-  @override void initState() { super.initState(); _check(); }
+  static const _channel = MethodChannel('app.channel.shared.data');
+
+  @override void initState() {
+    super.initState();
+    _channel.setMethodCallHandler(_onChannelCall);
+    _check();
+    _checkShareIntent();
+  }
+
+  /// Обработчик «горячих» share-intent'ов и deep-link'ов — когда приложение
+  /// уже запущено, а из системного меню пришёл новый share или ссылка.
+  /// MainActivity.onNewIntent вызовет `onNewSharedData` с готовым payload.
+  Future<dynamic> _onChannelCall(MethodCall call) async {
+    if (call.method == 'onNewSharedData') {
+      final args = (call.arguments as Map?) ?? {};
+      final profileId = args['profileId'] as String?;
+      final text = args['text'] as String?;
+      final files = (args['files'] as List?)?.cast<String>();
+
+      if (profileId != null && profileId.isNotEmpty) {
+        _openProfile(profileId);
+        return null;
+      }
+
+      _openSharePicker(text: text, files: files);
+    }
+    return null;
+  }
+
+  /// Проверяем, не запустили ли нас через «Поделиться» или deep-link
+  /// (профиль пользователя) из другого приложения.
+  /// Native-код в MainActivity сохраняет текст, пути к файлам и profileId,
+  /// мы их забираем единым вызовом `consumeSharedData`.
+  Future<void> _checkShareIntent() async {
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+          'consumeSharedData');
+      if (result == null) return;
+      final profileId = result['profileId'] as String?;
+      final text = result['text'] as String?;
+      final filesRaw = result['files'] as List?;
+
+      if (profileId != null && profileId.isNotEmpty) {
+        _openProfile(profileId);
+        return;
+      }
+
+      _openSharePicker(text: text, files: filesRaw?.cast<String>());
+    } on MissingPluginException {
+      // Native сторона не реализована — пропускаем
+    } catch (_) {}
+  }
+
+  /// Открывает профиль пользователя по ID, полученному из deep-link.
+  void _openProfile(String userId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null) return;
+      Navigator.of(ctx).push(MaterialPageRoute(
+        builder: (_) => UserProfileScreen(userId: userId),
+      ));
+    });
+  }
+
+  void _openSharePicker({String? text, List<String>? files}) {
+    final hasText = text != null && text.isNotEmpty;
+    final hasFiles = files != null && files.isNotEmpty;
+    if (!hasText && !hasFiles) return;
+
+    final sharedFiles = (files ?? const <String>[])
+        .map((p) => File(p))
+        .where((f) => f.existsSync())
+        .toList();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null) return;
+      Navigator.of(ctx).push(MaterialPageRoute(
+        builder: (_) => ShareChatPicker(
+          sharedText: hasText ? text : null,
+          sharedFiles: sharedFiles.isNotEmpty ? sharedFiles : null,
+        ),
+      ));
+    });
+  }
+
   Future<void> _check() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token'); final userId = prefs.getString('user_id');
@@ -70,6 +159,7 @@ class _SplashState extends State<_Splash> {
     if (token != null && userId != null) { await _init(userId); if (!mounted) return; Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen())); }
     else Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
+
   @override Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator(color: AppColors.primary)));
 }
 

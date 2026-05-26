@@ -4,7 +4,9 @@ import '../main.dart';
 import '../services/api_service.dart';
 import '../services/pusher_service_ws.dart';
 import '../models/chat.dart';
+import '../widgets/colored_avatar.dart';
 import 'chat_screen.dart';
+import 'server_channels_screen.dart';
 import 'profile_screen.dart';
 import 'create_chat_screen.dart';
 import 'search_screen.dart';
@@ -200,7 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(children: [
           _Avatar(imageUrl: chat.imageUrl, name: chat.title,
-              isChannel: isChannel, isGroup: isGroup),
+              isChannel: isChannel, isGroup: isGroup, id: chat.id),
           const SizedBox(width: 14),
           Expanded(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,55 +236,38 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
   Widget _buildServerTile(Map<String, dynamic> server) {
+    final name = server['name'] as String? ?? 'Сервер';
+    final image = server['imageUrl'] as String?;
     final chats = (server['chats'] as List?) ?? [];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface, borderRadius: BorderRadius.circular(14)),
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            leading: server['imageUrl'] != null
-                ? CircleAvatar(backgroundImage: NetworkImage(server['imageUrl']), radius: 20)
-                : Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.primary, AppColors.darkAccent],
-                        begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(child: Text(
-                      (server['name'] as String? ?? 'S')[0].toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
-                    )),
-                  ),
-            title: Text(server['name'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-            subtitle: Text('${chats.length} каналов',
-                style: const TextStyle(fontSize: 11, color: AppColors.muted)),
-            iconColor: AppColors.muted,
-            collapsedIconColor: AppColors.muted,
-            children: chats.map<Widget>((ch) {
-              final isChannel = ch['type'] == 'CHANNEL';
-              return ListTile(
-                contentPadding: const EdgeInsets.only(left: 64, right: 16),
-                leading: Icon(isChannel ? Icons.tag : Icons.forum_outlined,
-                    size: 16, color: AppColors.muted),
-                title: Text(ch['name'] ?? '', style: const TextStyle(fontSize: 13)),
-                dense: true,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => ChatScreen(chat: Chat.fromJson({
-                    'id': ch['id'], 'title': ch['name'], 'type': ch['type'],
-                  })),
-                )).then((_) => _load()),
-              );
-            }).toList(),
+
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ServerChannelsScreen(server: server),
+      )).then((_) => _load()),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(children: [
+          ColoredAvatar(
+            imageUrl: image,
+            title: name,
+            size: 52,
+            borderRadius: BorderRadius.circular(14),
           ),
-        ),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.dns_rounded, size: 14, color: AppColors.primary),
+              const SizedBox(width: 4),
+              Expanded(child: Text(name,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.white),
+                  overflow: TextOverflow.ellipsis)),
+            ]),
+            const SizedBox(height: 2),
+            Text('${chats.length} каналов',
+                style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+          ])),
+          const Icon(Icons.chevron_right, color: AppColors.muted, size: 20),
+        ]),
       ),
     );
   }
@@ -356,31 +341,57 @@ class _Avatar extends StatelessWidget {
   final String name;
   final bool isChannel;
   final bool isGroup;
+  final String? id;
   const _Avatar({required this.imageUrl, required this.name,
-      this.isChannel = false, this.isGroup = false});
+      this.isChannel = false, this.isGroup = false, this.id});
+
+  /// Проверка: это hex-цвет, сохранённый в БД через `generateAvatarColor()`
+  /// (см. `lib/avatar.ts` в Next.js проекте)?
+  static bool _isHex(String? s) =>
+      s != null && s.startsWith('#') && (s.length == 7 || s.length == 9 || s.length == 4);
+
+  /// Генерирует яркий цвет из строки — используется ТОЛЬКО как идентификатор
+  /// собеседника для приватных чатов без аватара (имитация Telegram).
+  static Color _colorFromString(String s) {
+    const colors = [
+      Color(0xFFE17076), // красный
+      Color(0xFFEDA86C), // оранжевый
+      Color(0xFFA695E7), // фиолетовый
+      Color(0xFF7BC862), // зелёный
+      Color(0xFF6EC9CB), // бирюзовый
+      Color(0xFF65AADD), // синий
+      Color(0xFFEE7AAE), // розовый
+      Color(0xFFE5C65B), // жёлтый
+    ];
+    int hash = 0;
+    for (int i = 0; i < s.length; i++) {
+      hash = s.codeUnitAt(i) + ((hash << 5) - hash);
+    }
+    return colors[hash.abs() % colors.length];
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (imageUrl != null) {
-      return CircleAvatar(backgroundImage: NetworkImage(imageUrl!), radius: 26);
+    // 1) hex-цвет из БД или http(s)-картинка → отдаём универсальному виджету
+    if (_isHex(imageUrl) || (imageUrl != null && imageUrl!.isNotEmpty)) {
+      return ColoredAvatar(
+        imageUrl: imageUrl,
+        title: name,
+        size: 52,
+      );
     }
+    // 2) Нет аватара вовсе → стабильный цвет по id (приятнее, чем серый кружок)
+    final color = _colorFromString(id ?? name);
     return Container(
       width: 52, height: 52,
       decoration: BoxDecoration(
-        color: isChannel
-            ? AppColors.primary.withOpacity(0.15)
-            : isGroup
-                ? AppColors.darkAccent.withOpacity(0.15)
-                : AppColors.surfaceAlt,
+        color: color,
         shape: BoxShape.circle,
       ),
-      child: isChannel
-          ? const Icon(Icons.tag, size: 20, color: AppColors.primary)
-          : isGroup
-              ? const Icon(Icons.group_rounded, size: 20, color: AppColors.secondary)
-              : Center(child: Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white),
-                )),
+      child: Center(child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white),
+      )),
     );
   }
 }

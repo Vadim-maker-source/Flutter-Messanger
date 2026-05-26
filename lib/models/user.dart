@@ -20,7 +20,21 @@ class SocialLinks {
     if (website != null) 'website': website,
   };
 
-  bool get isEmpty => telegram == null && vk == null && github == null && website == null;
+  bool get isEmpty => (telegram?.isEmpty ?? true) &&
+      (vk?.isEmpty ?? true) &&
+      (github?.isEmpty ?? true) &&
+      (website?.isEmpty ?? true);
+}
+
+class UserStats {
+  final int messagesCount;
+  final int chatsCount;
+  const UserStats({this.messagesCount = 0, this.chatsCount = 0});
+
+  factory UserStats.fromJson(Map<String, dynamic> json) => UserStats(
+        messagesCount: (json['messagesCount'] as num?)?.toInt() ?? 0,
+        chatsCount: (json['chatsCount'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class User {
@@ -32,7 +46,10 @@ class User {
   final String? bio;
   final String? status;
   final bool isOnline;
+  final DateTime? lastSeen;
+  final DateTime? createdAt;
   final SocialLinks? socialLinks;
+  final UserStats? stats;
 
   User({
     required this.id,
@@ -43,7 +60,10 @@ class User {
     this.bio,
     this.status,
     this.isOnline = false,
+    this.lastSeen,
+    this.createdAt,
     this.socialLinks,
+    this.stats,
   });
 
   factory User.fromJson(Map<String, dynamic> json) => User(
@@ -55,8 +75,18 @@ class User {
     bio: json['bio'],
     status: json['status'],
     isOnline: json['isOnline'] ?? false,
+    lastSeen: json['lastSeen'] != null
+        ? DateTime.tryParse(json['lastSeen'].toString())
+        : null,
+    createdAt: json['createdAt'] != null
+        ? DateTime.tryParse(json['createdAt'].toString())
+        : null,
     socialLinks: json['socialLinks'] != null
-        ? SocialLinks.fromJson(json['socialLinks'] as Map<String, dynamic>)
+        ? SocialLinks.fromJson(
+            Map<String, dynamic>.from(json['socialLinks'] as Map))
+        : null,
+    stats: json['stats'] != null
+        ? UserStats.fromJson(Map<String, dynamic>.from(json['stats'] as Map))
         : null,
   );
 
@@ -69,6 +99,8 @@ class User {
     'bio': bio,
     'status': status,
     'isOnline': isOnline,
+    if (lastSeen != null) 'lastSeen': lastSeen!.toIso8601String(),
+    if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
     if (socialLinks != null) 'socialLinks': socialLinks!.toJson(),
   };
 }

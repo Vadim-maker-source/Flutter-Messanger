@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../main.dart';
 import '../services/api_service.dart';
 import '../models/chat.dart';
+import '../widgets/colored_avatar.dart';
 import 'chat_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -44,7 +45,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _openPrivateChat(Map<String, dynamic> user) async {
-    final chat = await _api.createPrivateChat(user['id'] as String);
+    final partnerId = user['id'] as String;
+    final chat = await _api.createPrivateChat(partnerId);
     if (chat != null && mounted) {
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => ChatScreen(chat: Chat.fromJson({
@@ -52,6 +54,7 @@ class _SearchScreenState extends State<SearchScreen> {
           'title': user['displayName'] ?? user['username'],
           'imageUrl': user['avatarUrl'],
           'type': 'PRIVATE',
+          'partnerId': partnerId,
         })),
       ));
     }
@@ -64,6 +67,7 @@ class _SearchScreenState extends State<SearchScreen> {
         'title': chat['name'],
         'imageUrl': chat['imageUrl'],
         'type': chat['type'] ?? 'GROUP',
+        'partnerId': chat['type'] == 'PRIVATE' ? chat['partnerId'] : null,
       })),
     ));
   }
@@ -212,22 +216,12 @@ class _ChatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isChannel = chat['type'] == 'CHANNEL';
     return ListTile(
-      leading: chat['imageUrl'] != null
-          ? CircleAvatar(backgroundImage: NetworkImage(chat['imageUrl']), radius: 20)
-          : Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: isChannel
-                    ? AppColors.primary.withOpacity(0.15)
-                    : AppColors.surfaceAlt,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                isChannel ? Icons.tag : Icons.group_rounded,
-                size: 18,
-                color: isChannel ? AppColors.primary : AppColors.muted,
-              ),
-            ),
+      leading: ColoredAvatar(
+        imageUrl: chat['imageUrl'] as String?,
+        title: (chat['name'] as String?) ?? '',
+        size: 40,
+        borderRadius: BorderRadius.circular(12),
+      ),
       title: Text(chat['name'] ?? '',
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
       subtitle: chat['lastMessage'] != null
@@ -245,22 +239,12 @@ class _ServerTile extends StatelessWidget {
   const _ServerTile({required this.server});
   @override
   Widget build(BuildContext context) => ListTile(
-    leading: server['imageUrl'] != null
-        ? CircleAvatar(backgroundImage: NetworkImage(server['imageUrl']), radius: 20)
-        : Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.darkAccent],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(child: Text(
-              (server['name'] as String? ?? 'S')[0].toUpperCase(),
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-            )),
-          ),
+    leading: ColoredAvatar(
+      imageUrl: server['imageUrl'] as String?,
+      title: (server['name'] as String?) ?? 'S',
+      size: 40,
+      borderRadius: BorderRadius.circular(12),
+    ),
     title: Text(server['name'] ?? '',
         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
     subtitle: server['memberCount'] != null

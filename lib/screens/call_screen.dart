@@ -159,17 +159,24 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
 
   Future<MediaStream?> _getMedia() async {
     if (_isVideo) {
-      // 720p — оптимальный баланс между качеством и нагрузкой на encoder
-      // мобильного устройства. 1080p многие мобильные encoder'ы не тянут
-      // в реальном времени, и это срывает ICE/DTLS handshake (видно как
-      // «вечный Checking»). Если на устройстве топовый chip — 1080p пойдёт
-      // как первая попытка.
+      // Каскад попыток от лучшего к худшему — getUserMedia вернёт первое что
+      // удалось. На современных чипах (Snapdragon 7+, Dimensity 8000+) пройдёт
+      // 1080p@60. На средних — 1080p@30. На бюджетных — 720p. На совсем
+      // дровах — 480p.
       for (final cfg in [
+        {'audio': true, 'video': {'width': 1920, 'height': 1080, 'frameRate': 60, 'facingMode': 'user'}},
+        {'audio': true, 'video': {'width': 1920, 'height': 1080, 'frameRate': 30, 'facingMode': 'user'}},
+        {'audio': true, 'video': {'width': 1280, 'height': 720, 'frameRate': 60, 'facingMode': 'user'}},
         {'audio': true, 'video': {'width': 1280, 'height': 720, 'frameRate': 30, 'facingMode': 'user'}},
         {'audio': true, 'video': {'width': 640, 'height': 480, 'frameRate': 30, 'facingMode': 'user'}},
         {'audio': true, 'video': true},
       ]) {
-        try { return await navigator.mediaDevices.getUserMedia(cfg as Map<String, dynamic>); } catch (_) {}
+        try {
+          final stream = await navigator.mediaDevices.getUserMedia(cfg as Map<String, dynamic>);
+          final track = stream.getVideoTracks().firstOrNull;
+          debugPrint('[CALL] getUserMedia OK: ${cfg['video']} → track=${track?.label}');
+          return stream;
+        } catch (_) {}
       }
     }
     try { return await navigator.mediaDevices.getUserMedia({'audio': true, 'video': false}); } catch (_) {}
@@ -179,8 +186,29 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
   // Применяем максимальные битрейты к sender'ам PC. Вызывается ПОСЛЕ
   // setLocalDescription. Без этого WebRTC по дефолту шлёт ~1 Мбит/с видео,
   // что выглядит как блюр на 720p+.
-  static const _videoMaxBitrate = 2500000;  // 2.5 Mbps — норм для 720p мобила
-  static const _audioMaxBitrate = 64000;    // 64 kbps — Opus high-quality
+  static const _videoMaxBitrate = 6000000;  // 6 Mbps — отличное 1080p@60fps на топовых чипах
+  static const _audioMaxBitrate = 128000;   // 128 kbps — HD voice через Opus
+
+  /// Munge SDP: включаем у Opus стерео + FEC + макс. sample rate. Безопасное
+  /// вмешательство — только параметры существующего m=audio, не codec
+  /// preference и не структура SDP. Эффект слышен сразу — голос «пухлее»,
+  /// меньше "квакает" при потерях пакетов.
+  String _tuneSdp(String sdp) {
+    final fmtpRegex = RegExp(r'a=fmtp:111 ([^\r\n]*)');
+    return sdp.replaceAllMapped(fmtpRegex, (m) {
+      final params = m.group(1) ?? '';
+      bool has(String k) => RegExp('(^|;)\\s*$k=').hasMatch(params);
+      final additions = <String>[];
+      if (!has('stereo'))           additions.add('stereo=1');
+      if (!has('sprop-stereo'))     additions.add('sprop-stereo=1');
+      if (!has('maxaveragebitrate'))additions.add('maxaveragebitrate=$_audioMaxBitrate');
+      if (!has('maxplaybackrate'))  additions.add('maxplaybackrate=48000');
+      if (!has('useinbandfec'))     additions.add('useinbandfec=1');
+      if (!has('usedtx'))           additions.add('usedtx=0');
+      final sep = params.trim().endsWith(';') || params.trim().isEmpty ? '' : ';';
+      return 'a=fmtp:111 $params$sep${additions.join(";")}';
+    });
+  }
 
   Future<void> _tuneSenders(RTCPeerConnection pc) async {
     try {
@@ -195,7 +223,7 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
           }
           if (track.kind == 'video') {
             params.encodings![0].maxBitrate = _videoMaxBitrate;
-            params.encodings![0].maxFramerate = 30;
+            params.encodings![0].maxFramerate = 60;
             params.degradationPreference = RTCDegradationPreference.MAINTAIN_FRAMERATE;
           } else if (track.kind == 'audio') {
             params.encodings![0].maxBitrate = _audioMaxBitrate;
@@ -401,10 +429,11 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     if (_left || pc == null) { setState(() => _connecting = false); return; }
     _pc = pc;
     final offer = await pc.createOffer({});
-    await pc.setLocalDescription(offer);
+    final tunedOffer = RTCSessionDescription(_tuneSdp(offer.sdp ?? ''), offer.type);
+    await pc.setLocalDescription(tunedOffer);
     await _tuneSenders(pc);
     if (_left) return;
-    await _sendSignal('offer', {'sdp': offer.sdp});
+    await _sendSignal('offer', {'sdp': tunedOffer.sdp});
     _localOfferSent = true;
     debugPrint('[CALL] outgoing offer sent (callId=${widget.callId})');
     _timeoutTimer = Timer(const Duration(seconds: 60), () {
@@ -491,9 +520,10 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
       await _pc!.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
       _remoteDescSet = true;
       final answer = await _pc!.createAnswer({});
-      await _pc!.setLocalDescription(answer);
+      final tunedAnswer = RTCSessionDescription(_tuneSdp(answer.sdp ?? ''), answer.type);
+      await _pc!.setLocalDescription(tunedAnswer);
       await _tuneSenders(_pc!);
-      await _sendSignal('answer', {'sdp': answer.sdp});
+      await _sendSignal('answer', {'sdp': tunedAnswer.sdp});
       _localAnswerSent = true;
       debugPrint('[CALL] answer sent (callId=${widget.callId})');
       await _flushPendingIce();

@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/call_screen.dart';
 import 'services/api_service.dart';
+import 'services/notification_service.dart';
 import 'services/pusher_service_ws.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -18,6 +22,14 @@ final List<Map<String, dynamic>> signalBuffer = [];
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ru', null);
+  // Firebase нужен для FCM (фоновые пуши о звонках/сообщениях). Если init падает —
+  // приложение продолжит работать в foreground через Pusher, но push'и не пойдут.
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await NotificationService.init(navigatorKey);
+  } catch (e) {
+    debugPrint('[MAIN] Firebase/Notifications init failed: $e');
+  }
   runApp(const MyApp());
 }
 
@@ -62,6 +74,8 @@ class _SplashState extends State<_Splash> {
 }
 
 bool _initDone = false;
+StreamSubscription<String>? _fcmTokenSub;
+
 Future<void> _init(String userId) async {
   if (_initDone) return; _initDone = true;
   callPusher.subscribeToUserChannel(userId,
@@ -69,6 +83,30 @@ Future<void> _init(String userId) async {
     onOutgoingCall: _onOut,
     onWebRtcSignal: (data) { signalBuffer.add(data); onSignal?.call(data); },
   );
+  // Регистрируем текущий FCM-токен на сервере, чтобы прилетали push'и о
+  // входящих звонках/сообщениях когда приложение в фоне или убито.
+  // Делается это _после_ Pusher subscribe — чтобы получить дубль через push
+  // только если Pusher по какой-то причине не доставил (фон/Doze).
+  unawaited(_registerFcmToken());
+  // Токен может протухнуть — переподписываемся на refresh один раз за сессию.
+  _fcmTokenSub ??= NotificationService.onTokenRefresh.listen((t) {
+    debugPrint('[MAIN] FCM token refreshed → re-registering');
+    apiService.saveFcmToken(t);
+  });
+}
+
+Future<void> _registerFcmToken() async {
+  try {
+    final token = await NotificationService.getToken();
+    if (token == null || token.isEmpty) {
+      debugPrint('[MAIN] FCM token is null — push не работает');
+      return;
+    }
+    debugPrint('[MAIN] FCM token: ${token.substring(0, 20)}...');
+    await apiService.saveFcmToken(token);
+  } catch (e) {
+    debugPrint('[MAIN] saveFcmToken error: $e');
+  }
 }
 
 bool _open = false;

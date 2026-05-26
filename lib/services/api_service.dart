@@ -8,7 +8,7 @@ import '../models/chat.dart';
 import '../models/message.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.0.109:3000/api/mobile';
+  static const String baseUrl = 'http://194.87.201.226/api/mobile';
 
   String? _token;
 

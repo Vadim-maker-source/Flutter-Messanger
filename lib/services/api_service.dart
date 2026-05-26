@@ -657,6 +657,27 @@ class ApiService {
     return false;
   }
 
+  /// Обновляет настройки чата для текущего пользователя:
+  /// закрепление, архивирование, заглушение уведомлений.
+  Future<bool> updateChatPreferences(String chatId,
+      {bool? isPinned, bool? isArchived, bool? isMuted}) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$baseUrl/chats/preferences'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'chatId': chatId,
+          if (isPinned != null) 'isPinned': isPinned,
+          if (isArchived != null) 'isArchived': isArchived,
+          if (isMuted != null) 'isMuted': isMuted,
+        }),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
   Future<bool> deleteChat(String chatId) async {
     try {
       final res = await http.delete(

@@ -163,7 +163,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildList() {
-    if (_chats.isEmpty && _servers.isEmpty) {
+    // Разделяем: закреплённые, обычные, архивные
+    final pinned = _chats.where((c) => c.isPinned && !c.isArchived).toList();
+    final normal = _chats.where((c) => !c.isPinned && !c.isArchived).toList();
+    final archived = _chats.where((c) => c.isArchived).toList();
+
+    final hasAny = _chats.isNotEmpty || _servers.isNotEmpty;
+
+    if (!hasAny) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
@@ -187,9 +194,80 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_servers.isNotEmpty) ...[
         ..._servers.map(_buildServerTile),
       ],
-      ..._chats.map(_buildChatTile),
+      // Кнопка «Архив» — вверху (как в Telegram)
+      if (archived.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: InkWell(
+            onTap: () => _showArchivedChats(archived),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(children: [
+                const Icon(Icons.archive_outlined, color: AppColors.muted, size: 20),
+                const SizedBox(width: 12),
+                const Text('Архив',
+                    style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Text('${archived.length}',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 14)),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right, color: AppColors.muted, size: 20),
+              ]),
+            ),
+          ),
+        ),
+      // Закреплённые — с заголовком
+      if (pinned.isNotEmpty) ...[
+        const _SectionLabel('Закреплённые'),
+        ...pinned.map(_buildChatTile),
+      ],
+      // Обычные — с заголовком если есть закреплённые
+      if (normal.isNotEmpty) ...[
+        if (pinned.isNotEmpty) const _SectionLabel('Все чаты'),
+        ...normal.map(_buildChatTile),
+      ],
       const SizedBox(height: 80),
     ]);
+  }
+
+  void _showArchivedChats(List<Chat> archived) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollCtrl) => Column(children: [
+          Container(width: 36, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                  color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Архив',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              controller: scrollCtrl,
+              children: archived.map(_buildChatTile).toList(),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _buildChatTile(Chat chat) {
@@ -198,6 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return InkWell(
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => ChatScreen(chat: chat))).then((_) => _load()),
+      onLongPress: () => _showChatContextMenu(chat),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(children: [
@@ -211,6 +290,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (isChannel)
                   const Padding(padding: EdgeInsets.only(right: 3),
                       child: Icon(Icons.tag, size: 13, color: AppColors.primary)),
+                if (chat.isMuted)
+                  const Padding(padding: EdgeInsets.only(right: 3),
+                      child: Icon(Icons.notifications_off_rounded, size: 13, color: AppColors.muted)),
+                if (chat.isPinned)
+                  const Padding(padding: EdgeInsets.only(right: 3),
+                      child: Icon(Icons.push_pin, size: 13, color: Color(0xFFF59E0B))),
                 Expanded(child: Text(chat.title,
                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.white),
                     overflow: TextOverflow.ellipsis)),
@@ -231,6 +316,198 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text('${chat.unreadCount}',
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
             ),
+        ]),
+      ),
+    );
+  }
+
+  void _showChatContextMenu(Chat chat) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surfaceAlt,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 36, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2))),
+          // Заголовок
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(children: [
+              ColoredAvatar(
+                imageUrl: chat.imageUrl,
+                title: chat.title,
+                size: 40,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(chat.title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ]),
+          ),
+          const Divider(color: AppColors.border, height: 1),
+          // Закрепить / Открепить
+          if (chat.isPinned)
+            ListTile(
+              leading: const Icon(Icons.push_pin, color: Color(0xFFF59E0B), size: 20),
+              title: const Text('Открепить', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _api.updateChatPreferences(chat.id, isPinned: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Чат откреплён'), duration: Duration(seconds: 1)),
+                );
+                _load();
+              },
+            )
+          else
+            ListTile(
+              leading: const Icon(Icons.push_pin_outlined, color: Color(0xFFF59E0B), size: 20),
+              title: const Text('Закрепить', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _api.updateChatPreferences(chat.id, isPinned: true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Чат закреплён'), duration: Duration(seconds: 1)),
+                );
+                _load();
+              },
+            ),
+          // В архив / Вернуть из архива
+          if (chat.isArchived)
+            ListTile(
+              leading: const Icon(Icons.unarchive_outlined, color: Color(0xFF4ADE80), size: 20),
+              title: const Text('Вернуть из архива', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _api.updateChatPreferences(chat.id, isArchived: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Чат возвращён из архива'), duration: Duration(seconds: 1)),
+                );
+                _load();
+              },
+            )
+          else
+            ListTile(
+              leading: const Icon(Icons.archive_outlined, color: Color(0xFF8B5CF6), size: 20),
+              title: const Text('В архив', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _api.updateChatPreferences(chat.id, isArchived: true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Чат в архиве'), duration: Duration(seconds: 1)),
+                );
+                _load();
+              },
+            ),
+          // Заглушить / Включить уведомления
+          if (chat.isMuted)
+            ListTile(
+              leading: const Icon(Icons.notifications_active_outlined, color: Color(0xFF4ADE80), size: 20),
+              title: const Text('Включить уведомления', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _api.updateChatPreferences(chat.id, isMuted: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Уведомления включены'), duration: Duration(seconds: 1)),
+                );
+                _load();
+              },
+            )
+          else
+            ListTile(
+              leading: const Icon(Icons.notifications_off_outlined, color: Color(0xFF6B7280), size: 20),
+              title: const Text('Заглушить', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _api.updateChatPreferences(chat.id, isMuted: true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Уведомления заглушены'), duration: Duration(seconds: 1)),
+                );
+              },
+            ),
+          const Divider(color: AppColors.border, height: 1),
+          // Удалить у меня
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 20),
+            title: const Text('Удалить у меня', style: TextStyle(color: Color(0xFFEF4444))),
+            onTap: () async {
+              Navigator.pop(ctx);
+              final ok = await _api.leaveChat(chat.id);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(ok ? 'Чат удалён' : 'Не удалось удалить чат'),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+              if (ok) _load();
+            },
+          ),
+          // Удалить у всех
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Color(0xFFEF4444), size: 20),
+            title: const Text('Удалить у всех', style: TextStyle(color: Color(0xFFEF4444))),
+            onTap: () async {
+              Navigator.pop(ctx);
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  backgroundColor: AppColors.surfaceAlt,
+                  title: const Text('Удалить чат у всех?', style: TextStyle(color: Colors.white)),
+                  content: const Text('Это действие нельзя отменить.',
+                      style: TextStyle(color: Colors.white70)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(c, false),
+                      child: const Text('Отмена'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(c, true),
+                      child: const Text('Удалить', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm != true || !mounted) return;
+              final ok = await _api.deleteChat(chat.id);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(ok ? 'Чат удалён' : 'Не удалось удалить чат'),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+              if (ok) _load();
+            },
+          ),
+          // Заблокировать (только для приватных)
+          if (chat.type == 'PRIVATE' && chat.partnerId != null)
+            ListTile(
+              leading: const Icon(Icons.block, color: Color(0xFFEF4444), size: 20),
+              title: const Text('Заблокировать', style: TextStyle(color: Color(0xFFEF4444))),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final ok = await _api.blockUser(chat.partnerId!);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? 'Пользователь заблокирован' : 'Не удалось заблокировать'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 8),
         ]),
       ),
     );

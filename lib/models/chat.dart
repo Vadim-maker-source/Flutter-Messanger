@@ -7,6 +7,9 @@ class Chat {
   final int unreadCount;
   final String? role;
   final String? partnerId; // ID собеседника в приватном чате
+  final bool isPinned;
+  final bool isArchived;
+  final bool isMuted;
 
   Chat({
     required this.id,
@@ -17,6 +20,9 @@ class Chat {
     this.unreadCount = 0,
     this.role,
     this.partnerId,
+    this.isPinned = false,
+    this.isArchived = false,
+    this.isMuted = false,
   });
 
   factory Chat.fromJson(Map<String, dynamic> json) {
@@ -28,6 +34,9 @@ class Chat {
       type: json['type'] ?? 'PRIVATE',
       role: json['role'],
       partnerId: json['partnerId'],
+      isPinned: json['isPinned'] ?? false,
+      isArchived: json['isArchived'] ?? false,
+      isMuted: json['isMuted'] ?? false,
     );
   }
 
@@ -43,6 +52,9 @@ class Chat {
       unreadCount: json['unreadCount'] ?? 0,
       role: json['role'],
       partnerId: json['partnerId'],
+      isPinned: json['isPinned'] ?? false,
+      isArchived: json['isArchived'] ?? false,
+      isMuted: json['isMuted'] ?? false,
     );
   }
 }

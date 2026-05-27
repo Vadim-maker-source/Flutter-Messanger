@@ -123,12 +123,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     fontWeight: FontWeight.w600)),
           ),
           IconButton(
-            icon: Icon(Icons.edit_outlined,
-                color: Colors.white.withValues(alpha: 0.6)),
-            tooltip: 'Редактировать',
-            onPressed: _editProfile,
-          ),
-          IconButton(
             icon: Icon(Icons.settings_outlined,
                 color: Colors.white.withValues(alpha: 0.6)),
             tooltip: 'Настройки',

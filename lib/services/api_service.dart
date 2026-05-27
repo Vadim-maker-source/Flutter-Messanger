@@ -391,6 +391,51 @@ class ApiService {
     } catch (_) {}
   }
 
+  // ─── 2FA & Password ──────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>?> send2faCode({
+    required String code,
+    required String action,
+    required String method,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/auth/send-2fa-code'),
+        headers: await _headers(),
+        body: jsonEncode({'code': code, 'action': action, 'method': method}),
+      );
+      return _decode(res);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<({bool success, String? error})> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    bool forgot = false,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/auth/change-password'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'oldPassword': oldPassword,
+          'newPassword': newPassword,
+          'forgot': forgot,
+        }),
+      );
+      final data = _decode(res);
+      if (data == null) return (success: false, error: 'Ошибка сети');
+      return (
+        success: data['success'] == true,
+        error: data['error'] as String?,
+      );
+    } catch (_) {
+      return (success: false, error: 'Ошибка сети');
+    }
+  }
+
   // ─── Create ──────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> createPrivateChat(String partnerId) async {

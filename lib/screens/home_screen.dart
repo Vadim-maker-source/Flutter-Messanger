@@ -11,6 +11,7 @@ import 'server_channels_screen.dart';
 import 'profile_screen.dart';
 import 'create_chat_screen.dart';
 import 'search_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -127,29 +128,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
             const Spacer(),
             // Three-dot menu
-            PopupMenuButton<String>(
+            IconButton(
               icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-              color: AppColors.surfaceAlt,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              onSelected: (v) {
-                if (v == 'profile') Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const ProfileScreen()));
-                if (v == 'create') _showCreateMenu();
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'create',
-                    child: Row(children: [
-                      Icon(Icons.add_rounded, size: 18, color: AppColors.primary),
-                      SizedBox(width: 10),
-                      Text('Новый чат'),
-                    ])),
-                const PopupMenuItem(value: 'profile',
-                    child: Row(children: [
-                      Icon(Icons.person_outline_rounded, size: 18, color: AppColors.primary),
-                      SizedBox(width: 10),
-                      Text('Профиль'),
-                    ])),
-              ],
+              onPressed: _showMainMenu,
             ),
           ]),
         ),
@@ -311,11 +292,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   const Padding(padding: EdgeInsets.only(right: 3),
                       child: Icon(Icons.tag, size: 13, color: AppColors.primary)),
                 if (chat.isMuted)
-                  const Padding(padding: EdgeInsets.only(right: 3),
-                      child: Icon(Icons.notifications_off_rounded, size: 13, color: AppColors.muted)),
+                  Padding(padding: const EdgeInsets.only(right: 3),
+                      child: Icon(Icons.notifications_off_rounded, size: 13, color: Colors.white.withValues(alpha: 0.4))),
                 if (chat.isPinned)
                   const Padding(padding: EdgeInsets.only(right: 3),
-                      child: Icon(Icons.push_pin, size: 13, color: Color(0xFFF59E0B))),
+                      child: Icon(Icons.push_pin, size: 13, color: Colors.white)),
                 Expanded(child: Text(chat.title,
                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.white),
                     overflow: TextOverflow.ellipsis)),
@@ -378,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // Закрепить / Открепить
           if (chat.isPinned)
             ListTile(
-              leading: const Icon(Icons.push_pin, color: Color(0xFFF59E0B), size: 20),
+              leading: const Icon(Icons.push_pin, color: Colors.white, size: 20),
               title: const Text('Открепить', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -391,7 +372,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             )
           else
             ListTile(
-              leading: const Icon(Icons.push_pin_outlined, color: Color(0xFFF59E0B), size: 20),
+              leading: const Icon(Icons.push_pin_outlined, color: Colors.white, size: 20),
               title: const Text('Закрепить', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -405,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // В архив / Вернуть из архива
           if (chat.isArchived)
             ListTile(
-              leading: const Icon(Icons.unarchive_outlined, color: Color(0xFF4ADE80), size: 20),
+              leading: const Icon(Icons.unarchive_outlined, color: Colors.white, size: 20),
               title: const Text('Вернуть из архива', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -418,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             )
           else
             ListTile(
-              leading: const Icon(Icons.archive_outlined, color: Color(0xFF8B5CF6), size: 20),
+              leading: const Icon(Icons.archive_outlined, color: Colors.white, size: 20),
               title: const Text('В архив', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -432,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // Заглушить / Включить уведомления
           if (chat.isMuted)
             ListTile(
-              leading: const Icon(Icons.notifications_active_outlined, color: Color(0xFF4ADE80), size: 20),
+              leading: const Icon(Icons.notifications_active_outlined, color: Colors.white, size: 20),
               title: const Text('Включить уведомления', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -445,7 +426,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             )
           else
             ListTile(
-              leading: const Icon(Icons.notifications_off_outlined, color: Color(0xFF6B7280), size: 20),
+              leading: const Icon(Icons.notifications_off_outlined, color: Colors.white, size: 20),
               title: const Text('Заглушить', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -565,6 +546,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ])),
           const Icon(Icons.chevron_right, color: AppColors.muted, size: 20),
         ]),
+      ),
+    );
+  }
+
+  void _showMainMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF16161B),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              _MenuTile(
+                icon: Icons.add_circle_outline_rounded,
+                label: 'Новый чат',
+                subtitle: 'Группа, канал или сервер',
+                onTap: () { Navigator.pop(context); _showCreateMenu(); },
+              ),
+              _MenuTile(
+                icon: Icons.person_outline_rounded,
+                label: 'Профиль',
+                subtitle: 'Имя, статус, соц. сети',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const ProfileScreen()));
+                },
+              ),
+              _MenuTile(
+                icon: Icons.settings_outlined,
+                label: 'Настройки',
+                subtitle: 'Приватность, уведомления, тема',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -711,5 +750,43 @@ class _SheetItem extends StatelessWidget {
     title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
     subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.muted)),
     onTap: onTap,
+  );
+}
+
+
+class _MenuTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _MenuTile({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(children: [
+        Icon(icon, size: 22, color: Colors.white.withValues(alpha: 0.7)),
+        const SizedBox(width: 16),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white)),
+            const SizedBox(height: 2),
+            Text(subtitle, style: TextStyle(
+                fontSize: 12, color: Colors.white.withValues(alpha: 0.4))),
+          ],
+        )),
+        Icon(Icons.chevron_right_rounded,
+            size: 20, color: Colors.white.withValues(alpha: 0.2)),
+      ]),
+    ),
   );
 }

@@ -703,23 +703,22 @@ class _ChatScreenState extends State<ChatScreen> {
   );
 
   Widget _buildInput() => Container(
-    padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1D2633),
-      border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
-    ),
+    padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+    decoration: const BoxDecoration(color: Color(0xFF1D2633)),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       // Reply preview
       if (_replyingTo != null)
         Container(
-          margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+          margin: const EdgeInsets.only(bottom: 6, left: 4, right: 4),
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           decoration: BoxDecoration(
             color: const Color(0xFF2D3542),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
           ),
           child: Row(children: [
+            Icon(Icons.reply_rounded, size: 16, color: AppColors.primary),
+            const SizedBox(width: 8),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                 _replyingTo!.userId == _myId ? 'Вы' :
@@ -738,112 +737,129 @@ class _ChatScreenState extends State<ChatScreen> {
                 style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
               ),
             ])),
-            IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-              onPressed: _cancelReply, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            IconButton(
+              icon: Icon(Icons.close_rounded, size: 18, color: Colors.white.withValues(alpha: 0.5)),
+              onPressed: _cancelReply,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
           ]),
         ),
       // Edit preview
       if (_editingMsg != null)
         Container(
-          margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+          margin: const EdgeInsets.only(bottom: 6, left: 4, right: 4),
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           decoration: BoxDecoration(
             color: const Color(0xFF2D3542),
-            borderRadius: BorderRadius.circular(12),
-            border: Border(left: BorderSide(color: Colors.orange, width: 3)),
+            borderRadius: BorderRadius.circular(14),
+            border: const Border(left: BorderSide(color: Color(0xFFFB923C), width: 3)),
           ),
           child: Row(children: [
+            const Icon(Icons.edit_rounded, size: 16, color: Color(0xFFFB923C)),
+            const SizedBox(width: 8),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Редактирование', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange)),
-              Text(_editingMsg!.content, maxLines: 1, overflow: TextOverflow.ellipsis,
+              const Text('Редактирование',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFFB923C))),
+              Text(_editingMsg!.content,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
             ])),
-            IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-              onPressed: _cancelEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            IconButton(
+              icon: Icon(Icons.close_rounded, size: 18, color: Colors.white.withValues(alpha: 0.5)),
+              onPressed: _cancelEdit,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
           ]),
         ),
-      // Input row — Telegram style
-      Row(children: [
-        // Emoji button
-        GestureDetector(
-          onTap: () {
-            if (_showEmoji) {
-              setState(() => _showEmoji = false);
-              _focusNode.requestFocus();
-            } else {
-              _focusNode.unfocus();
-              setState(() => _showEmoji = true);
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(
-              _showEmoji ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined,
-              color: Colors.white.withValues(alpha: 0.5), size: 24,
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
-        // Text field — rounded, transparent bg
+      // Input row — единая капсула с инлайн-кнопками
+      Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        // Pill-капсула с emoji внутри + текст + скрепка внутри
         Expanded(child: Container(
+          constraints: const BoxConstraints(minHeight: 46),
           decoration: BoxDecoration(
             color: const Color(0xFF2D3542),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          child: Row(children: [
-            const SizedBox(width: 16),
-            Expanded(child: TextField(
-              controller: _ctrl,
-              focusNode: _focusNode,
-              maxLines: 4,
-              minLines: 1,
-              textCapitalization: TextCapitalization.sentences,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              onChanged: _onTextChanged,
-              onTap: () {
-                if (_showEmoji) setState(() => _showEmoji = false);
-              },
-              decoration: InputDecoration(
-                hintText: 'Сообщение',
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                isDense: true,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            // Emoji button (внутри капсулы слева)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 7, top: 7),
+              child: _IconRoundBtn(
+                icon: _showEmoji ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined,
+                onTap: () {
+                  if (_showEmoji) {
+                    setState(() => _showEmoji = false);
+                    _focusNode.requestFocus();
+                  } else {
+                    _focusNode.unfocus();
+                    setState(() => _showEmoji = true);
+                  }
+                },
               ),
-              onSubmitted: (_) => _send(),
+            ),
+            // Text field
+            Expanded(child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: TextField(
+                controller: _ctrl,
+                focusNode: _focusNode,
+                maxLines: 5,
+                minLines: 1,
+                textCapitalization: TextCapitalization.sentences,
+                style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.3),
+                onChanged: _onTextChanged,
+                onTap: () {
+                  if (_showEmoji) setState(() => _showEmoji = false);
+                },
+                decoration: InputDecoration(
+                  hintText: 'Сообщение',
+                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 15),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _send(),
+              ),
             )),
-            const SizedBox(width: 8),
+            // Attach (внутри капсулы справа)
+            Padding(
+              padding: const EdgeInsets.only(right: 4, bottom: 7, top: 7),
+              child: _IconRoundBtn(
+                icon: Icons.attach_file_rounded,
+                rotate: -0.6,
+                onTap: _showAttachMenu,
+              ),
+            ),
           ]),
         )),
-        const SizedBox(width: 4),
-        // Attach button (rotated paperclip)
-        GestureDetector(
-          onTap: _showAttachMenu,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Transform.rotate(
-              angle: 0.8,
-              child: Icon(Icons.attach_file, color: Colors.white.withValues(alpha: 0.5), size: 24),
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
-        // Mic / Send button — blue circle
-        GestureDetector(
-          onTap: _hasText ? _send : null,
-          child: Container(
-            width: 44, height: 44,
-            decoration: const BoxDecoration(
-              color: Color(0xFF7166D8),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _hasText ? Icons.send_rounded : Icons.mic_rounded,
-              color: Colors.white, size: 22,
+        const SizedBox(width: 8),
+        // Send / Mic — отдельная фиолетовая кнопка справа
+        Padding(
+          padding: const EdgeInsets.only(bottom: 1),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            transitionBuilder: (child, anim) =>
+                ScaleTransition(scale: anim, child: child),
+            child: GestureDetector(
+              key: ValueKey(_hasText),
+              onTap: _hasText ? _send : null,
+              child: Container(
+                width: 46, height: 46,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF7166D8),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _hasText ? Icons.send_rounded : Icons.mic_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
             ),
           ),
         ),
@@ -1131,8 +1147,12 @@ class _MessageBubble extends StatelessWidget {
   Widget _buildContent() {
     if (msg.fileUrl != null) {
       switch (msg.fileType) {
-        case 'IMAGE': return _mediaWithBar(ImageMessage(url: msg.fileUrl!));
-        case 'VIDEO': return _mediaWithBar(VideoMessage(url: msg.fileUrl!));
+        case 'IMAGE': return ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: ImageMessage(url: msg.fileUrl!));
+        case 'VIDEO': return ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: VideoMessage(url: msg.fileUrl!));
         case 'ROUND': return RoundVideoMessage(url: msg.fileUrl!);
         case 'AUDIO': return AudioMessage(url: msg.fileUrl!, isMe: isMe);
         default: return _buildFileCard();
@@ -1143,29 +1163,6 @@ class _MessageBubble extends StatelessWidget {
           style: const TextStyle(fontSize: 15, color: Colors.white, height: 1.4));
     }
     return const SizedBox.shrink();
-  }
-
-  /// Фиолетовая полоска под медиа (фото/видео) — как на веб-версии.
-  Widget _mediaWithBar(Widget media) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: media,
-      ),
-      Container(
-        height: 4,
-        margin: const EdgeInsets.only(top: 2),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF7166D8),
-              const Color(0xFF229ED9),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-    ]);
   }
 
   /// Карточка файла — использует FileMessage из media_widgets (с реальным скачиванием).
@@ -1216,6 +1213,34 @@ class _MessageBubble extends StatelessWidget {
 }
 
 // ─── Кнопка прикрепления ─────────────────────────────────────────────────────
+
+class _IconRoundBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final double rotate;
+  const _IconRoundBtn({required this.icon, required this.onTap, this.rotate = 0});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 32, height: 32,
+          child: Center(
+            child: Transform.rotate(
+              angle: rotate,
+              child: Icon(icon, size: 22, color: Colors.white.withValues(alpha: 0.55)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _AttachBtn extends StatelessWidget {
   final IconData icon;

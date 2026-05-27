@@ -217,6 +217,7 @@ class PusherService {
     required void Function(Map<String, dynamic>) onIncomingCall,
     required void Function(Map<String, dynamic>) onOutgoingCall,
     void Function(Map<String, dynamic>)? onWebRtcSignal,
+    void Function(Map<String, dynamic>)? onCallAcceptedElsewhere,
   }) {
     print('[PUSHER] subscribeToUserChannel userId=$userId');
     _sub('user-$userId', (event, data) {
@@ -230,6 +231,9 @@ class PusherService {
         case 'webrtc-signal':
           print('[PUSHER] -> webrtc-signal type=${data['type']}');
           onWebRtcSignal?.call(data);
+        case 'call-accepted-elsewhere':
+          print('[PUSHER] -> call-accepted-elsewhere');
+          onCallAcceptedElsewhere?.call(data);
       }
     });
   }

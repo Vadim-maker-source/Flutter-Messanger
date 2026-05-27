@@ -172,6 +172,7 @@ Future<void> _init(String userId) async {
     onIncomingCall: _onIn,
     onOutgoingCall: _onOut,
     onWebRtcSignal: (data) { signalBuffer.add(data); onSignal?.call(data); },
+    onCallAcceptedElsewhere: _onCallAcceptedElsewhere,
   );
   // Регистрируем текущий FCM-токен на сервере, чтобы прилетали push'и о
   // входящих звонках/сообщениях когда приложение в фоне или убито.
@@ -205,6 +206,25 @@ bool _open = false;
 void lockCallSlot() { _open = true; }
 void unlockCallSlot() { _open = false; }
 bool isCallSlotLocked() => _open;
+
+void _onCallAcceptedElsewhere(Map<String, dynamic> d) {
+  // Звонок принят на другом устройстве — закрываем если мы НЕ участвуем
+  if (!_open) return;
+  // Если это устройство уже в активном звонке — не закрываем
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null) return;
+  // Даём небольшую задержку чтобы не конфликтовать с собственным answer
+  Future.delayed(const Duration(milliseconds: 500), () {
+    // Проверяем что слот всё ещё открыт (не закрылся сам)
+    if (!_open) return;
+    // Если onSignal установлен — значит CallScreen активен и участвует в звонке
+    if (onSignal != null) return;
+    final navCtx = navigatorKey.currentContext;
+    if (navCtx == null) return;
+    Navigator.of(navCtx).popUntil((route) => route.isFirst);
+    _open = false;
+  });
+}
 
 void _onIn(Map<String, dynamic> d) {
   if (_open) return;

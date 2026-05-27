@@ -17,6 +17,7 @@ import 'chat_picker_screen.dart';
 
 import 'media_recorder.dart';
 import 'media_widgets.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 
 
 class ChatScreen extends StatefulWidget {
@@ -57,6 +58,10 @@ class _ChatScreenState extends State<ChatScreen> {
   // Edit mode
   Message? _editingMsg;
   Message? _replyingTo;
+
+  // Emoji & input state
+  bool _showEmoji = false;
+  bool _hasText = false;
 
   // Reactions map: emoji -> key
   static const _reactions = {
@@ -216,6 +221,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
     _ctrl.clear();
+    setState(() => _hasText = false);
     _stopTyping();
     final replyId = _replyingTo?.id;
     setState(() => _replyingTo = null);
@@ -246,6 +252,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onTextChanged(String value) {
+    final hasText = value.trim().isNotEmpty;
+    if (hasText != _hasText) setState(() => _hasText = hasText);
     final now = DateTime.now();
     if (value.isNotEmpty && (_lastTypingSent == null ||
         now.difference(_lastTypingSent!).inSeconds >= 3)) {
@@ -479,8 +487,8 @@ class _ChatScreenState extends State<ChatScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF17212B),  // тёмно-синий (Telegram-стиль)
-              Color(0xFF0E1621),  // чуть темнее к низу
+              Color(0xFF1D2633),  // тёмно-синий (Telegram-стиль)
+              Color(0xFF1D2633),  // чуть темнее к низу
             ],
           ),
         ),
@@ -544,6 +552,36 @@ class _ChatScreenState extends State<ChatScreen> {
             ]),
           ),
         if (canWrite) _buildInput() else _buildReadOnly(),
+        if (_showEmoji)
+          SizedBox(
+            height: 260,
+            child: EmojiPicker(
+              onEmojiSelected: (_, emoji) {
+                _ctrl.text += emoji.emoji;
+                _ctrl.selection = TextSelection.fromPosition(
+                    TextPosition(offset: _ctrl.text.length));
+                if (!_hasText) setState(() => _hasText = true);
+              },
+              config: Config(
+                height: 260,
+                emojiViewConfig: EmojiViewConfig(
+                  backgroundColor: const Color(0xFF1D2633),
+                  columns: 8,
+                  emojiSizeMax: 28,
+                ),
+                categoryViewConfig: const CategoryViewConfig(
+                  backgroundColor: Color(0xFF1D2633),
+                  iconColorSelected: Color(0xFF7166D8),
+                  indicatorColor: Color(0xFF7166D8),
+                  iconColor: Colors.white38,
+                ),
+                searchViewConfig: const SearchViewConfig(
+                  backgroundColor: Color(0xFF1D2633),
+                  buttonIconColor: Colors.white38,
+                ),
+              ),
+            ),
+          ),
       ])),
     );
   }
@@ -667,7 +705,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildInput() => Container(
     padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
     decoration: BoxDecoration(
-      color: const Color(0xFF17212B),
+      color: const Color(0xFF1D2633),
       border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
     ),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -677,7 +715,7 @@ class _ChatScreenState extends State<ChatScreen> {
           margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A2E),
+            color: const Color(0xFF2D3542),
             borderRadius: BorderRadius.circular(12),
             border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
           ),
@@ -710,7 +748,7 @@ class _ChatScreenState extends State<ChatScreen> {
           margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A2E),
+            color: const Color(0xFF2D3542),
             borderRadius: BorderRadius.circular(12),
             border: Border(left: BorderSide(color: Colors.orange, width: 3)),
           ),
@@ -726,19 +764,30 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       // Input row — Telegram style
       Row(children: [
-        // Attach button
+        // Emoji button
         GestureDetector(
-          onTap: _showAttachMenu,
+          onTap: () {
+            if (_showEmoji) {
+              setState(() => _showEmoji = false);
+              _focusNode.requestFocus();
+            } else {
+              _focusNode.unfocus();
+              setState(() => _showEmoji = true);
+            }
+          },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(Icons.attach_file_rounded, color: Colors.white.withValues(alpha: 0.5), size: 24),
+            child: Icon(
+              _showEmoji ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined,
+              color: Colors.white.withValues(alpha: 0.5), size: 24,
+            ),
           ),
         ),
         const SizedBox(width: 4),
         // Text field — rounded, transparent bg
         Expanded(child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A2E),
+            color: const Color(0xFF2D3542),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
@@ -752,8 +801,11 @@ class _ChatScreenState extends State<ChatScreen> {
               textCapitalization: TextCapitalization.sentences,
               style: const TextStyle(color: Colors.white, fontSize: 15),
               onChanged: _onTextChanged,
+              onTap: () {
+                if (_showEmoji) setState(() => _showEmoji = false);
+              },
               decoration: InputDecoration(
-                hintText: 'Введите сообщение...',
+                hintText: 'Сообщение',
                 hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -767,21 +819,32 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(width: 8),
           ]),
         )),
-        const SizedBox(width: 8),
-        // Send button — purple circle
+        const SizedBox(width: 4),
+        // Attach button (rotated paperclip)
         GestureDetector(
-          onTap: _send,
+          onTap: _showAttachMenu,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Transform.rotate(
+              angle: 0.8,
+              child: Icon(Icons.attach_file, color: Colors.white.withValues(alpha: 0.5), size: 24),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        // Mic / Send button — blue circle
+        GestureDetector(
+          onTap: _hasText ? _send : null,
           child: Container(
             width: 44, height: 44,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF6C3EF4), Color(0xFF9B6DFF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: Color(0xFF7166D8),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+            child: Icon(
+              _hasText ? Icons.send_rounded : Icons.mic_rounded,
+              color: Colors.white, size: 22,
+            ),
           ),
         ),
       ]),
@@ -884,7 +947,7 @@ class _MessageBubble extends StatelessWidget {
                   constraints: BoxConstraints(
                       maxWidth: MediaQuery.of(context).size.width * 0.70),
                   decoration: BoxDecoration(
-                    color: isMe ? const Color(0xFF6C3EF4) : const Color(0xFF212D3B),
+                    color: isMe ? const Color(0xFF7166D8) : const Color(0xFF2D3542),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(18),
                       topRight: const Radius.circular(18),
@@ -931,12 +994,12 @@ class _MessageBubble extends StatelessWidget {
                             Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Icon(Icons.edit, size: 12,
-                                  color: isMe ? const Color(0xFFB98CFF) : Colors.white.withValues(alpha: 0.3)),
+                                  color: isMe ? const Color(0xFFB8B0F0) : Colors.white.withValues(alpha: 0.3)),
                             ),
                           Text(
                             DateFormat('HH:mm').format(msg.createdAt),
                             style: TextStyle(fontSize: 12,
-                                color: isMe ? const Color(0xFFB98CFF) : Colors.white.withValues(alpha: 0.5)),
+                                color: isMe ? const Color(0xFFB8B0F0) : Colors.white.withValues(alpha: 0.5)),
                           ),
                           if (isMe) ...[
                             const SizedBox(width: 4),
@@ -1095,8 +1158,8 @@ class _MessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              const Color(0xFF6C3EF4),
-              const Color(0xFF9B6DFF),
+              const Color(0xFF7166D8),
+              const Color(0xFF229ED9),
             ],
           ),
           borderRadius: BorderRadius.circular(2),
@@ -1145,10 +1208,10 @@ class _MessageBubble extends StatelessWidget {
         : msg.user?.username ?? '?';
     return msg.user?.avatarUrl != null
         ? CircleAvatar(backgroundImage: NetworkImage(msg.user!.avatarUrl!), radius: 20)
-        : CircleAvatar(radius: 20, backgroundColor: const Color(0x206C3EF4),
+        : CircleAvatar(radius: 20, backgroundColor: const Color(0x202AABEE),
             child: Text(name[0].toUpperCase(),
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
-                    color: AppColors.primary)));
+                    color: Color(0xFF7166D8))));
   }
 }
 

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
+import 'package:gal/gal.dart';
 
 const _purple = Color(0xFF7166D8);
 const _bubbleBg = Color(0x1AFFFFFF);
@@ -27,6 +28,25 @@ Future<bool> downloadAndOpen(String url, {String? fileName}) async {
 
     await Dio().download(url, savePath);
     await OpenFilex.open(savePath);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Сохраняет фото/видео в галерею устройства.
+Future<bool> saveToGallery(String url, {required bool isVideo}) async {
+  try {
+    final dir = await getTemporaryDirectory();
+    final ext = isVideo ? 'mp4' : 'jpg';
+    final name = '${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final savePath = '${dir.path}/$name';
+    await Dio().download(url, savePath);
+    if (isVideo) {
+      await Gal.putVideo(savePath);
+    } else {
+      await Gal.putImage(savePath);
+    }
     return true;
   } catch (_) {
     return false;
@@ -69,7 +89,7 @@ class ImageMessage extends StatelessWidget {
           fit: BoxFit.cover,
           loadingBuilder: (_, child, p) => p == null ? child
               : Container(width: 220, height: 160,
-                  color: const Color(0xFF18181B),
+                  color: const Color(0xFF1D2633),
                   child: const Center(child: CircularProgressIndicator(color: _purple, strokeWidth: 2)))),
     ),
   );
@@ -86,6 +106,19 @@ class _FullScreenImage extends StatelessWidget {
       leading: IconButton(icon: const Icon(Icons.close, color: Colors.white),
           onPressed: () => Navigator.pop(context)),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.save_alt_rounded, color: Colors.white),
+          tooltip: 'Сохранить в галерею',
+          onPressed: () async {
+            final ok = await saveToGallery(url, isVideo: false);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(ok ? 'Сохранено в галерею' : 'Не удалось сохранить'),
+                duration: const Duration(seconds: 2),
+              ));
+            }
+          },
+        ),
         IconButton(
           icon: const Icon(Icons.download_rounded, color: Colors.white),
           tooltip: 'Скачать',
@@ -143,7 +176,7 @@ class _VideoMessageState extends State<VideoMessage> {
             ? ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: VideoPlayer(_ctrl))
-            : Container(color: const Color(0xFF18181B),
+            : Container(color: const Color(0xFF1D2633),
                 child: const Center(child: CircularProgressIndicator(color: _purple, strokeWidth: 2))),
         // Play button overlay
         Center(child: Container(
@@ -233,6 +266,19 @@ class _FullScreenVideoState extends State<_FullScreenVideo> {
                 IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () => Navigator.pop(context)),
                 const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.save_alt_rounded, color: Colors.white),
+                  tooltip: 'Сохранить в галерею',
+                  onPressed: () async {
+                    final ok = await saveToGallery(widget.url, isVideo: true);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(ok ? 'Сохранено в галерею' : 'Не удалось сохранить'),
+                        duration: const Duration(seconds: 2),
+                      ));
+                    }
+                  },
+                ),
                 IconButton(
                   icon: const Icon(Icons.download_rounded, color: Colors.white),
                   tooltip: 'Скачать',
@@ -329,7 +375,7 @@ class _RoundVideoMessageState extends State<RoundVideoMessage> {
       child: Stack(alignment: Alignment.center, children: [
         ClipOval(child: SizedBox(width: 160, height: 160,
           child: _ready ? VideoPlayer(_ctrl)
-              : Container(color: const Color(0xFF18181B)))),
+              : Container(color: const Color(0xFF1D2633)))),
         Container(width: 48, height: 48,
           decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
           child: Icon(_ctrl.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -344,7 +390,8 @@ class _RoundVideoMessageState extends State<RoundVideoMessage> {
 class AudioMessage extends StatefulWidget {
   final String url;
   final bool isMe;
-  const AudioMessage({super.key, required this.url, this.isMe = false});
+  final List<double>? waveform;
+  const AudioMessage({super.key, required this.url, this.isMe = false, this.waveform});
   @override
   State<AudioMessage> createState() => _AudioMessageState();
 }
@@ -354,10 +401,12 @@ class _AudioMessageState extends State<AudioMessage> {
   bool _playing = false;
   Duration _pos = Duration.zero;
   Duration _dur = Duration.zero;
+  late List<double> _bars;
 
   @override
   void initState() {
     super.initState();
+    _bars = widget.waveform ?? _generateWaveform(widget.url);
     _player.setUrl(widget.url).then((_) {
       if (mounted) setState(() => _dur = _player.duration ?? Duration.zero);
     });
@@ -370,6 +419,17 @@ class _AudioMessageState extends State<AudioMessage> {
       } else {
         if (mounted) setState(() => _playing = s.playing);
       }
+    });
+  }
+
+  /// Генерирует псевдо-waveform из хеша URL (стабильный для одного и того же файла).
+  static List<double> _generateWaveform(String url) {
+    final seed = url.hashCode;
+    const count = 40;
+    return List.generate(count, (i) {
+      // Простой PRNG на основе seed + index
+      final v = ((seed * 31 + i * 17) ^ (i * 1234567)) & 0x7FFFFFFF;
+      return 0.2 + 0.8 * ((v % 100) / 100.0);
     });
   }
 
@@ -395,22 +455,30 @@ class _AudioMessageState extends State<AudioMessage> {
         ),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-              overlayShape: SliderComponentShape.noOverlay,
-              activeTrackColor: _purple,
-              inactiveTrackColor: _bubbleBg,
-              thumbColor: _purple,
-            ),
-            child: Slider(
-              value: progress,
-              onChanged: (v) => _player.seek(
-                  Duration(milliseconds: (v * _dur.inMilliseconds).round())),
+          GestureDetector(
+            onTapDown: (details) {
+              if (_dur.inMilliseconds <= 0) return;
+              final box = context.findRenderObject() as RenderBox;
+              // Учитываем отступ кнопки play (40+10=50)
+              final localX = details.localPosition.dx;
+              final width = box.size.width - 50 - 30; // минус кнопка download
+              final ratio = (localX / width).clamp(0.0, 1.0);
+              _player.seek(Duration(milliseconds: (ratio * _dur.inMilliseconds).round()));
+            },
+            child: CustomPaint(
+              size: const Size(double.infinity, 28),
+              painter: _WaveformPainter(
+                bars: _bars,
+                progress: progress,
+                activeColor: widget.isMe ? Colors.white : _purple,
+                inactiveColor: widget.isMe
+                    ? Colors.white.withValues(alpha: 0.3)
+                    : _purple.withValues(alpha: 0.3),
+              ),
             ),
           ),
-          Text(_fmt(_pos),
+          const SizedBox(height: 2),
+          Text(_playing ? _fmt(_pos) : _fmt(_dur),
               style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
         ])),
         // Download button
@@ -428,6 +496,52 @@ class _AudioMessageState extends State<AudioMessage> {
       ]),
     );
   }
+}
+
+// ─── Waveform Painter ────────────────────────────────────────────────────────
+
+class _WaveformPainter extends CustomPainter {
+  final List<double> bars;
+  final double progress;
+  final Color activeColor;
+  final Color inactiveColor;
+
+  _WaveformPainter({
+    required this.bars,
+    required this.progress,
+    required this.activeColor,
+    required this.inactiveColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final count = bars.length;
+    final barWidth = size.width / count * 0.6;
+    final gap = size.width / count * 0.4;
+    final step = barWidth + gap;
+    final maxH = size.height;
+
+    for (int i = 0; i < count; i++) {
+      final x = i * step;
+      final h = (bars[i] * maxH).clamp(3.0, maxH);
+      final y = (maxH - h) / 2;
+      final isActive = (i / count) <= progress;
+      final paint = Paint()
+        ..color = isActive ? activeColor : inactiveColor
+        ..strokeCap = StrokeCap.round;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, y, barWidth, h),
+          Radius.circular(barWidth / 2),
+        ),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WaveformPainter old) =>
+      old.progress != progress || old.activeColor != activeColor;
 }
 
 // ─── Файл (с реальным скачиванием) ───────────────────────────────────────────
@@ -451,7 +565,7 @@ class FileMessage extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF3B1F8E).withValues(alpha: 0.4),
+          color: const Color(0xFF7166D8).withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(children: [

@@ -99,7 +99,7 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF121214),
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       isScrollControlled: true,
@@ -150,166 +150,14 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF09090B),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF09090B),
-        title: Text(_title),
-        actions: [
-          if (_loading)
-            const Padding(padding: EdgeInsets.all(16),
-                child: SizedBox(width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)))
-          else
-            TextButton(
-              onPressed: _create,
-              child: const Text('Создать',
-                  style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
-            ),
-        ],
-      ),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        // Название
-        const _SectionLabel('Название'),
-        const SizedBox(height: 8),
-        _Field(controller: _nameCtrl, hint: _hint),
-        const SizedBox(height: 20),
+  Color get _accentColor =>
+      widget.type == CreateType.server ? const Color(0xFFF97316) : AppColors.primary;
 
-        // Доступ
-        const _SectionLabel('Доступ'),
-        const SizedBox(height: 8),
-        Row(children: [
-          _AccessChip(label: 'Публичный', icon: Icons.public_rounded,
-              selected: _access == 'PUBLIC',
-              onTap: () => setState(() => _access = 'PUBLIC')),
-          const SizedBox(width: 8),
-          _AccessChip(label: 'По ссылке', icon: Icons.link_rounded,
-              selected: _access == 'LINK_ONLY',
-              onTap: () => setState(() => _access = 'LINK_ONLY')),
-          const SizedBox(width: 8),
-          _AccessChip(label: 'Приватный', icon: Icons.lock_outline_rounded,
-              selected: _access == 'PRIVATE',
-              onTap: () => setState(() => _access = 'PRIVATE')),
-        ]),
-        const SizedBox(height: 8),
-        _AccessDescription(access: _access),
-
-        // Подканалы сервера
-        if (widget.type == CreateType.server) ...[
-          const SizedBox(height: 24),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const _SectionLabel('Подканалы'),
-            GestureDetector(
-              onTap: _addChannel,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add, size: 14, color: AppColors.primary),
-                  SizedBox(width: 4),
-                  Text('Добавить', style: TextStyle(
-                      fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
-                ]),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          ..._serverChannels.asMap().entries.map((e) => _ChannelRow(
-            channel: e.value,
-            onDelete: _serverChannels.length > 1
-                ? () => setState(() => _serverChannels.removeAt(e.key))
-                : null,
-            onToggleType: () => setState(() {
-              _serverChannels[e.key]['type'] =
-                  _serverChannels[e.key]['type'] == 'TEXT' ? 'CHANNEL' : 'TEXT';
-            }),
-          )),
-        ],
-
-        // Участники
-        const SizedBox(height: 24),
-        const _SectionLabel('Добавить участников'),
-        const SizedBox(height: 8),
-        _Field(
-          controller: _searchCtrl,
-          hint: 'Поиск пользователей...',
-          onChanged: _searchUsers,
-          prefix: const Icon(Icons.search, size: 18, color: AppColors.muted),
-          suffix: _searching
-              ? const SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
-              : null,
-        ),
-
-        if (_searchResults.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF18181B),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.08)),
-            ),
-            child: Column(children: _searchResults.asMap().entries.map((e) {
-              final u = e.value;
-              final sel = _selectedIds.contains(u['id'] as String);
-              final isLast = e.key == _searchResults.length - 1;
-              return Column(children: [
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  leading: u['avatarUrl'] != null
-                      ? CircleAvatar(backgroundImage: NetworkImage(u['avatarUrl']), radius: 20)
-                      : CircleAvatar(radius: 20, backgroundColor: AppColors.surfaceAlt,
-                          child: Text((u['username'] as String? ?? '?')[0].toUpperCase(),
-                              style: const TextStyle(color: AppColors.primary))),
-                  title: Text(u['displayName'] ?? u['username'] ?? '',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: Text('@${u['username']}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.muted)),
-                  trailing: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 26, height: 26,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: sel ? AppColors.primary : Colors.transparent,
-                      border: Border.all(
-                          color: sel ? AppColors.primary : AppColors.border, width: 2),
-                    ),
-                    child: sel
-                        ? const Icon(Icons.check, size: 14, color: Colors.white)
-                        : null,
-                  ),
-                  onTap: () => _toggleUser(u),
-                ),
-                if (!isLast) Divider(height: 1,
-                    color: Colors.white.withOpacity(0.05), indent: 56, endIndent: 16),
-              ]);
-            }).toList()),
-          ),
-        ],
-
-        const SizedBox(height: 32),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _loading ? null : _create,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            ),
-            child: Text('Создать ${_title.split(' ').last}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          ),
-        ),
-        const SizedBox(height: 32),
-      ]),
-    );
-  }
+  IconData get _typeIcon => switch (widget.type) {
+    CreateType.group => Icons.people_rounded,
+    CreateType.channel => Icons.campaign_rounded,
+    CreateType.server => Icons.shield_rounded,
+  };
 
   String get _title => switch (widget.type) {
     CreateType.group => 'Создать группу',
@@ -320,8 +168,242 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
   String get _hint => switch (widget.type) {
     CreateType.group => 'Название группы',
     CreateType.channel => 'Название канала',
-    CreateType.server => 'Название сервера',
+    CreateType.server => 'Мой крутой сервер',
   };
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
+            child: Row(children: [
+              Icon(_typeIcon, color: _accentColor, size: 28),
+              const SizedBox(width: 10),
+              Expanded(child: Text(_title,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: Icon(Icons.close_rounded, color: Colors.white.withValues(alpha: 0.3)),
+              ),
+            ]),
+          ),
+
+          // Content
+          Expanded(child: ListView(padding: const EdgeInsets.all(20), children: [
+            // Avatar upload
+            Center(child: GestureDetector(
+              onTap: () {}, // TODO: image picker
+              child: Container(
+                width: 96, height: 96,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignInside,
+                  ),
+                ),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.camera_alt_rounded, size: 28,
+                      color: Colors.white.withValues(alpha: 0.2)),
+                  const SizedBox(height: 4),
+                  Text('ЗАГРУЗИТЬ', style: TextStyle(fontSize: 9,
+                      fontWeight: FontWeight.w800, color: Colors.white.withValues(alpha: 0.2),
+                      letterSpacing: 0.5)),
+                ]),
+              ),
+            )),
+            const SizedBox(height: 24),
+
+            // Name field
+            const _SectionLabel('Название'),
+            const SizedBox(height: 8),
+            _Field(controller: _nameCtrl, hint: _hint),
+            const SizedBox(height: 20),
+
+            // Access
+            const _SectionLabel('Доступ'),
+            const SizedBox(height: 8),
+            Row(children: [
+              _AccessChip(label: 'Публичный', icon: Icons.public_rounded,
+                  selected: _access == 'PUBLIC',
+                  onTap: () => setState(() => _access = 'PUBLIC')),
+              const SizedBox(width: 8),
+              _AccessChip(label: 'По ссылке', icon: Icons.link_rounded,
+                  selected: _access == 'LINK_ONLY',
+                  onTap: () => setState(() => _access = 'LINK_ONLY')),
+              const SizedBox(width: 8),
+              _AccessChip(label: 'Приватный', icon: Icons.lock_outline_rounded,
+                  selected: _access == 'PRIVATE',
+                  onTap: () => setState(() => _access = 'PRIVATE')),
+            ]),
+            const SizedBox(height: 8),
+            _AccessDescription(access: _access),
+
+            // Server channels
+            if (widget.type == CreateType.server) ...[
+              const SizedBox(height: 24),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const _SectionLabel('Подканалы'),
+                GestureDetector(
+                  onTap: _addChannel,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.add, size: 14, color: AppColors.primary),
+                      SizedBox(width: 4),
+                      Text('Добавить', style: TextStyle(
+                          fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              ..._serverChannels.asMap().entries.map((e) => _ChannelRow(
+                channel: e.value,
+                onDelete: _serverChannels.length > 1
+                    ? () => setState(() => _serverChannels.removeAt(e.key))
+                    : null,
+                onToggleType: () => setState(() {
+                  _serverChannels[e.key]['type'] =
+                      _serverChannels[e.key]['type'] == 'TEXT' ? 'CHANNEL' : 'TEXT';
+                }),
+              )),
+            ],
+
+            // Members
+            const SizedBox(height: 24),
+            const _SectionLabel('Добавить участников'),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _searchCtrl,
+              hint: 'Поиск пользователей...',
+              onChanged: _searchUsers,
+              prefix: const Icon(Icons.search, size: 18, color: AppColors.muted),
+              suffix: _searching
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
+                  : null,
+            ),
+
+            // Selected chips
+            if (_selectedUsers.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: _selectedUsers.map((u) {
+                return Container(
+                  padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(u['displayName'] ?? u['username'] ?? '',
+                        style: const TextStyle(fontSize: 12, color: AppColors.primary,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () => _toggleUser(u),
+                      child: const Icon(Icons.close_rounded, size: 14, color: AppColors.primary),
+                    ),
+                  ]),
+                );
+              }).toList()),
+            ],
+
+            if (_searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Column(children: _searchResults.asMap().entries.map((e) {
+                  final u = e.value;
+                  final sel = _selectedIds.contains(u['id'] as String);
+                  final isLast = e.key == _searchResults.length - 1;
+                  return Column(children: [
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      leading: u['avatarUrl'] != null
+                          ? CircleAvatar(backgroundImage: NetworkImage(u['avatarUrl']), radius: 20)
+                          : CircleAvatar(radius: 20, backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                              child: Text((u['username'] as String? ?? '?')[0].toUpperCase(),
+                                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700))),
+                      title: Text(u['displayName'] ?? u['username'] ?? '',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      subtitle: Text('@${u['username']}',
+                          style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+                      trailing: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 26, height: 26,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: sel ? AppColors.primary : Colors.transparent,
+                          border: Border.all(
+                              color: sel ? AppColors.primary : AppColors.border, width: 2),
+                        ),
+                        child: sel
+                            ? const Icon(Icons.check, size: 14, color: Colors.white)
+                            : null,
+                      ),
+                      onTap: () => _toggleUser(u),
+                    ),
+                    if (!isLast) Divider(height: 1,
+                        color: Colors.white.withValues(alpha: 0.05), indent: 56, endIndent: 16),
+                  ]);
+                }).toList()),
+              ),
+            ],
+
+            const SizedBox(height: 32),
+          ])),
+
+          // Bottom button + decorative bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _create,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accentColor,
+                  foregroundColor: widget.type == CreateType.server ? Colors.black : Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  elevation: 4,
+                  shadowColor: _accentColor.withValues(alpha: 0.3),
+                ),
+                child: _loading
+                    ? const SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text('Создать сейчас',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ),
+          // Decorative bar
+          Container(
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: _accentColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
 // ─── Виджеты ─────────────────────────────────────────────────────────────────
@@ -356,13 +438,14 @@ class _Field extends StatelessWidget {
       suffixIcon: suffix != null
           ? Padding(padding: const EdgeInsets.all(12), child: suffix) : null,
       filled: true,
-      fillColor: Colors.white.withOpacity(0.05),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary)),
+      fillColor: Colors.white.withValues(alpha: 0.05),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     ),
   );
 }
@@ -377,13 +460,14 @@ class _AccessChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
-    child: Container(
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: selected ? AppColors.primary.withOpacity(0.15) : Colors.white.withOpacity(0.05),
+        color: selected ? AppColors.primary.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: selected ? AppColors.primary : Colors.white.withOpacity(0.1),
+          color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.1),
           width: selected ? 1.5 : 1,
         ),
       ),
@@ -410,14 +494,14 @@ class _AccessDescription extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(children: [
         Icon(icon, size: 14, color: color),
         const SizedBox(width: 8),
-        Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: color.withOpacity(0.9)))),
+        Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.9)))),
       ]),
     );
   }
@@ -437,9 +521,9 @@ class _ChannelRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Row(children: [
           Icon(isChannel ? Icons.campaign_rounded : Icons.tag_rounded,
@@ -452,7 +536,7 @@ class _ChannelRow extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(isChannel ? 'Канал' : 'Чат',
@@ -465,7 +549,7 @@ class _ChannelRow extends StatelessWidget {
             GestureDetector(
               onTap: onDelete,
               child: Icon(Icons.close_rounded, size: 16,
-                  color: Colors.white.withOpacity(0.3)),
+                  color: Colors.white.withValues(alpha: 0.3)),
             ),
           ],
         ]),
@@ -487,10 +571,10 @@ class _TypeChip extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: selected ? AppColors.primary.withOpacity(0.15) : Colors.white.withOpacity(0.05),
+        color: selected ? AppColors.primary.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: selected ? AppColors.primary : Colors.white.withOpacity(0.1),
+          color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.1),
           width: selected ? 1.5 : 1,
         ),
       ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
+import 'package:just_audio/just_audio.dart';
 import '../services/api_service.dart';
 import '../main.dart';
 
@@ -26,12 +27,13 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
   final _api = ApiService();
   final _localRenderer = RTCVideoRenderer();
   final _remoteRenderer = RTCVideoRenderer();
+  final _ringtone = AudioPlayer();
 
   RTCPeerConnection? _pc;
   MediaStream? _local, _remote;
 
   bool _connecting = false, _connected = false, _left = false;
-  bool _muted = false, _vidOff = false;
+  bool _muted = false, _vidOff = false, _speakerOn = false;
   // 'none' | 'peer-left' | 'lost'
   String _endReason = 'none';
   bool _hasEverConnected = false;
@@ -89,7 +91,25 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     super.initState();
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _pulseAnim = Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _startRingtone();
     _start();
+  }
+
+  Future<void> _startRingtone() async {
+    try {
+      await _ringtone.setAsset('assets/ringtone.mp3');
+      await _ringtone.setLoopMode(LoopMode.one);
+      await _ringtone.play();
+    } catch (_) {}
+    // Видеозвонки по умолчанию на громкой связи
+    if (_isVideo) {
+      _speakerOn = true;
+      Helper.setSpeakerphoneOn(true);
+    }
+  }
+
+  void _stopRingtone() {
+    try { _ringtone.stop(); } catch (_) {}
   }
 
   Future<void> _start() async {
@@ -159,22 +179,15 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
 
   Future<MediaStream?> _getMedia() async {
     if (_isVideo) {
-      // Каскад попыток от лучшего к худшему — getUserMedia вернёт первое что
-      // удалось. На современных чипах (Snapdragon 7+, Dimensity 8000+) пройдёт
-      // 1080p@60. На средних — 1080p@30. На бюджетных — 720p. На совсем
-      // дровах — 480p.
       for (final cfg in [
-        {'audio': true, 'video': {'width': 1920, 'height': 1080, 'frameRate': 60, 'facingMode': 'user'}},
         {'audio': true, 'video': {'width': 1920, 'height': 1080, 'frameRate': 30, 'facingMode': 'user'}},
-        {'audio': true, 'video': {'width': 1280, 'height': 720, 'frameRate': 60, 'facingMode': 'user'}},
         {'audio': true, 'video': {'width': 1280, 'height': 720, 'frameRate': 30, 'facingMode': 'user'}},
         {'audio': true, 'video': {'width': 640, 'height': 480, 'frameRate': 30, 'facingMode': 'user'}},
         {'audio': true, 'video': true},
       ]) {
         try {
           final stream = await navigator.mediaDevices.getUserMedia(cfg as Map<String, dynamic>);
-          final track = stream.getVideoTracks().firstOrNull;
-          debugPrint('[CALL] getUserMedia OK: ${cfg['video']} → track=${track?.label}');
+          debugPrint('[CALL] getUserMedia OK: ${cfg['video']}');
           return stream;
         } catch (_) {}
       }
@@ -184,10 +197,10 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
   }
 
   // Применяем максимальные битрейты к sender'ам PC. Вызывается ПОСЛЕ
-  // setLocalDescription. Без этого WebRTC по дефолту шлёт ~1 Мбит/с видео,
-  // что выглядит как блюр на 720p+.
-  static const _videoMaxBitrate = 6000000;  // 6 Mbps — отличное 1080p@60fps на топовых чипах
-  static const _audioMaxBitrate = 128000;   // 128 kbps — HD voice через Opus
+  // setLocalDescription. WebRTC адаптивно снижает битрейт при плохой сети.
+  static const _videoMaxBitrate = 4000000;  // 4 Mbps — Full HD
+  static const _videoMinBitrate = 800000;   // 800 kbps — минимум
+  static const _audioMaxBitrate = 64000;    // 64 kbps — Opus HD
 
   /// Munge SDP: включаем у Opus стерео + FEC + макс. sample rate. Безопасное
   /// вмешательство — только параметры существующего m=audio, не codec
@@ -223,8 +236,9 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
           }
           if (track.kind == 'video') {
             params.encodings![0].maxBitrate = _videoMaxBitrate;
-            params.encodings![0].maxFramerate = 60;
-            params.degradationPreference = RTCDegradationPreference.MAINTAIN_FRAMERATE;
+            params.encodings![0].minBitrate = _videoMinBitrate;
+            params.encodings![0].maxFramerate = 30;
+            params.degradationPreference = RTCDegradationPreference.BALANCED;
           } else if (track.kind == 'audio') {
             params.encodings![0].maxBitrate = _audioMaxBitrate;
           }
@@ -326,6 +340,9 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     _connected = true;
     _connecting = false;
     _hasEverConnected = true;
+    _stopRingtone();
+    // Логируем тип соединения (P2P vs TURN relay)
+    _logConnectionType();
     // Сбросить состояние «звонок закончен», если были в transient disconnect
     if (_endReason != 'none') _endReason = 'none';
     if (_durationTimer == null && !wasConnected) {
@@ -334,6 +351,28 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
       });
     }
     setState(() {});
+  }
+
+  Future<void> _logConnectionType() async {
+    try {
+      final stats = await _pc?.getStats();
+      if (stats == null) return;
+      for (final report in stats) {
+        if (report.type == 'candidate-pair' && report.values['state'] == 'succeeded') {
+          final localId = report.values['localCandidateId'];
+          for (final r in stats) {
+            if (r.id == localId) {
+              final type = r.values['candidateType']; // 'host', 'srflx', 'relay'
+              debugPrint('[CALL] ★ Connection type: $type ${type == "relay" ? "(TURN)" : "(P2P)"}');
+              break;
+            }
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('[CALL] stats error: $e');
+    }
   }
 
   // Кратковременная потеря — даём шанс восстановиться сами или через ICE restart
@@ -448,6 +487,7 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
 
   Future<void> _join() async {
     if (_connecting || _left) return;
+    _stopRingtone();
     setState(() => _connecting = true);
     // Если offer всё ещё не получен — забираем с сервера
     if (_pendingOffer == null) {
@@ -699,6 +739,12 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     try { await Helper.switchCamera(vt); } catch (_) {}
   }
 
+  void _toggleSpeaker() {
+    _speakerOn = !_speakerOn;
+    Helper.setSpeakerphoneOn(_speakerOn);
+    setState(() {});
+  }
+
   String get _durationLabel {
     final m = _durationSecs ~/ 60; final s = _durationSecs % 60;
     return '${m.toString().padLeft(2,'0')}:${s.toString().padLeft(2,'0')}';
@@ -707,6 +753,8 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _left = true;
+    _stopRingtone();
+    _ringtone.dispose();
     _timeoutTimer?.cancel();
     _durationTimer?.cancel();
     _disconnectGraceTimer?.cancel();
@@ -865,12 +913,12 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     padding: const EdgeInsets.symmetric(horizontal: 24),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
       _ctrlBtn(icon: _muted ? Icons.mic_off : Icons.mic, active: _muted, activeColor: const Color(0xFFEF4444), onTap: _toggleMute, label: 'Микрофон'),
+      _ctrlBtn(icon: _speakerOn ? Icons.volume_up : Icons.volume_down, active: _speakerOn, activeColor: AppColors.primary, onTap: _toggleSpeaker, label: 'Динамик'),
       GestureDetector(onTap: _leave, child: Container(width: 68, height: 68, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFEF4444), boxShadow: [BoxShadow(color: Color(0x66EF4444), blurRadius: 20, spreadRadius: 4)]), child: const Icon(Icons.call_end, color: Colors.white, size: 30))),
       if (_isVideo) ...[
         _ctrlBtn(icon: _vidOff ? Icons.videocam_off : Icons.videocam, active: _vidOff, activeColor: const Color(0xFFEF4444), onTap: _toggleVideo, label: 'Камера'),
-        _ctrlBtn(icon: Icons.flip_camera_android, active: false, activeColor: const Color(0xFF6C3EF4), onTap: _switchCamera, label: 'Перевернуть'),
-      ] else
-        _ctrlBtn(icon: Icons.volume_up, active: false, activeColor: const Color(0xFF6C3EF4), onTap: () {}, label: 'Динамик'),
+        _ctrlBtn(icon: Icons.flip_camera_android, active: false, activeColor: AppColors.primary, onTap: _switchCamera, label: 'Перевернуть'),
+      ],
     ]),
   );
 

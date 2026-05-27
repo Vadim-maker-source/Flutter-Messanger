@@ -602,6 +602,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _logout() async {
     final userId = _user?.id ?? '';
+    await _api.setOnlineStatus(false);
     await _api.clearToken();
     if (userId.isNotEmpty) disposeCallsOnLogout(userId);
     if (!mounted) return;

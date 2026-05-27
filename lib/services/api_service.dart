@@ -381,6 +381,16 @@ class ApiService {
     return null;
   }
 
+  Future<void> setOnlineStatus(bool isOnline) async {
+    try {
+      await http.patch(
+        Uri.parse('$baseUrl/users/status'),
+        headers: await _headers(),
+        body: jsonEncode({'isOnline': isOnline}),
+      );
+    } catch (_) {}
+  }
+
   // ─── Create ──────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> createPrivateChat(String partnerId) async {

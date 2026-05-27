@@ -38,16 +38,16 @@ void main() async {
 }
 
 class AppColors {
-  static const primary = Color(0xFF6C3EF4);
-  static const secondary = Color(0xFFB98CFF);
+  static const primary = Color(0xFF7166D8);
+  static const secondary = Color(0xFFB8B0F0);
   static const darkAccent = Color(0xFF4B1FD1);
-  static const background = Color(0xFF09090B);
-  static const surface = Color(0xFF18181B);
-  static const surfaceAlt = Color(0xFF27272A);
-  static const border = Color(0xFF3F3F46);
+  static const background = Color(0xFF1D2633);
+  static const surface = Color(0xFF232F3E);
+  static const surfaceAlt = Color(0xFF2D3542);
+  static const border = Color(0xFF3F4A56);
   static const muted = Color(0xFF71717A);
   static const scrollbar = Color(0xFF7166D8);
-  static const searchbar = Color(0xFF27272A);
+  static const searchbar = Color(0xFF2D3542);
 }
 
 class MyApp extends StatelessWidget {

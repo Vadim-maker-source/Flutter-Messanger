@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
@@ -17,19 +18,35 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _api = ApiService();
   final _pusher = PusherService();
   List<Chat> _chats = [];
   List<Map<String, dynamic>> _servers = [];
   bool _isLoading = true;
   String? _userId;
+  Timer? _heartbeat;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
     _initPusher();
+    _api.setOnlineStatus(true);
+    _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) => _api.setOnlineStatus(true));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _api.setOnlineStatus(true);
+      _heartbeat?.cancel();
+      _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) => _api.setOnlineStatus(true));
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _api.setOnlineStatus(false);
+      _heartbeat?.cancel();
+    }
   }
 
   Future<void> _initPusher() async {
@@ -54,6 +71,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _heartbeat?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _api.setOnlineStatus(false);
     if (_userId != null) _pusher.unsubscribeFromSidebar(_userId!);
     super.dispose();
   }

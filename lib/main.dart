@@ -11,6 +11,7 @@ import 'screens/home_screen.dart';
 import 'screens/call_screen.dart';
 import 'screens/share_chat_picker.dart';
 import 'screens/user_profile_screen.dart';
+import 'screens/invite_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/pusher_service_ws.dart';
@@ -82,8 +83,14 @@ class _SplashState extends State<_Splash> {
     if (call.method == 'onNewSharedData') {
       final args = (call.arguments as Map?) ?? {};
       final profileId = args['profileId'] as String?;
+      final inviteCode = args['inviteCode'] as String?;
       final text = args['text'] as String?;
       final files = (args['files'] as List?)?.cast<String>();
+
+      if (inviteCode != null && inviteCode.isNotEmpty) {
+        _openInvite(inviteCode);
+        return null;
+      }
 
       if (profileId != null && profileId.isNotEmpty) {
         _openProfile(profileId);
@@ -105,8 +112,14 @@ class _SplashState extends State<_Splash> {
           'consumeSharedData');
       if (result == null) return;
       final profileId = result['profileId'] as String?;
+      final inviteCode = result['inviteCode'] as String?;
       final text = result['text'] as String?;
       final filesRaw = result['files'] as List?;
+
+      if (inviteCode != null && inviteCode.isNotEmpty) {
+        _openInvite(inviteCode);
+        return;
+      }
 
       if (profileId != null && profileId.isNotEmpty) {
         _openProfile(profileId);
@@ -126,6 +139,17 @@ class _SplashState extends State<_Splash> {
       if (ctx == null) return;
       Navigator.of(ctx).push(MaterialPageRoute(
         builder: (_) => UserProfileScreen(userId: userId),
+      ));
+    });
+  }
+
+  /// Открывает экран приглашения по invite-коду.
+  void _openInvite(String code) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null) return;
+      Navigator.of(ctx).push(MaterialPageRoute(
+        builder: (_) => InviteScreen(code: code),
       ));
     });
   }

@@ -693,6 +693,72 @@ class ApiService {
     return false;
   }
 
+  Future<bool> addChatMember(String chatId, String userId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/chats/members'),
+        headers: await _headers(),
+        body: jsonEncode({'chatId': chatId, 'userId': userId}),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> addServerMember(String serverId, String userId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/servers/$serverId/members'),
+        headers: await _headers(),
+        body: jsonEncode({'userId': userId}),
+      );
+      final data = _decode(res);
+      return data?['success'] == true;
+    } catch (_) {}
+    return false;
+  }
+
+  // ─── Invites ────────────────────────────────────────────────────────────────
+
+  /// Получает информацию по invite-коду без присоединения.
+  /// Возвращает: { type, target, memberCount, uses, maxUses, expiresAt }.
+  Future<Map<String, dynamic>?> getInviteInfo(String code) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/invites?code=$code'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data?['success'] == true) return data!['data'] as Map<String, dynamic>;
+    } catch (_) {}
+    return null;
+  }
+
+  /// Присоединяет текущего пользователя по invite-коду.
+  /// Возвращает: { type: "CHAT"|"SERVER", targetId, error? }.
+  Future<Map<String, dynamic>?> joinByInvite(String code) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$baseUrl/invites'),
+        headers: await _headers(),
+        body: jsonEncode({'code': code}),
+      );
+      final data = _decode(res);
+      if (data == null) return {'success': false, 'error': 'Ошибка сети'};
+      if (data['success'] == true) {
+        return {
+          'success': true,
+          'type': data['data']?['type'],
+          'targetId': data['data']?['targetId'],
+        };
+      }
+      return {'success': false, 'error': data['error'] ?? 'Не удалось присоединиться'};
+    } catch (_) {
+      return {'success': false, 'error': 'Ошибка сети'};
+    }
+  }
+
   // ─── Chat/Server management ─────────────────────────────────────────────────
 
   Future<bool> updateChat(String chatId, {String? name, String? imageUrl, String? access}) async {

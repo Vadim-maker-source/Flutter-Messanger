@@ -46,11 +46,15 @@ class MainActivity : FlutterActivity() {
     /** ID профиля из deep link (если приложение открыто по ссылке /profile/xxx). */
     private var pendingProfileId: String? = null
 
+    /** Код инвайта из deep link (/invite/xxx или talky://invite/xxx). */
+    private var pendingInviteCode: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyCallWindowFlags(intent)
         handleShareIntent(intent)
         handleProfileDeepLink(intent)
+        handleInviteDeepLink(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -58,6 +62,7 @@ class MainActivity : FlutterActivity() {
         applyCallWindowFlags(intent)
         handleShareIntent(intent)
         handleProfileDeepLink(intent)
+        handleInviteDeepLink(intent)
         // Если Flutter уже подписан — пушим обновление сразу
         val payload = mutableMapOf<String, Any?>(
             "text" to pendingText,
@@ -65,6 +70,9 @@ class MainActivity : FlutterActivity() {
         )
         if (pendingProfileId != null) {
             payload["profileId"] = pendingProfileId
+        }
+        if (pendingInviteCode != null) {
+            payload["inviteCode"] = pendingInviteCode
         }
         channel?.invokeMethod("onNewSharedData", payload)
     }
@@ -93,9 +101,13 @@ class MainActivity : FlutterActivity() {
                         if (pendingProfileId != null) {
                             payload["profileId"] = pendingProfileId
                         }
+                        if (pendingInviteCode != null) {
+                            payload["inviteCode"] = pendingInviteCode
+                        }
                         pendingText = null
                         pendingFiles = emptyList()
                         pendingProfileId = null
+                        pendingInviteCode = null
                         result.success(payload)
                     }
                     else -> result.notImplemented()
@@ -184,7 +196,7 @@ class MainActivity : FlutterActivity() {
      *
      * Поддерживает два формата:
      *   1) HTTP:    http://194.87.201.226/profile/abc123  → path=/profile/abc123
-     *   2) Custom:  speeky://profile/abc123                → host=profile, path=/abc123
+     *   2) Custom:  talky://profile/abc123                → host=profile, path=/abc123
      */
     private fun handleProfileDeepLink(intent: Intent?) {
         if (intent == null || intent.action != Intent.ACTION_VIEW) return
@@ -194,13 +206,38 @@ class MainActivity : FlutterActivity() {
         val id: String? = when {
             // HTTP deep link: http(s)://host/profile/xxx
             path.startsWith("/profile/") -> path.removePrefix("/profile/").trim('/')
-            // Custom scheme: speeky://profile/xxx
-            uri.scheme == "speeky" && uri.host == "profile" -> path.trim('/')
+            // Custom scheme: talky://profile/xxx
+            uri.scheme == "talky" && uri.host == "profile" -> path.trim('/')
             else -> null
         }
 
         if (!id.isNullOrEmpty()) {
             pendingProfileId = id
+        }
+    }
+
+    /**
+     * Извлекает код инвайта из deep-link URL.
+     *
+     * Поддерживает два формата:
+     *   1) HTTP:    https://194.87.201.226/invite/abc123  → path=/invite/abc123
+     *   2) Custom:  talky://invite/abc123                → host=invite, path=/abc123
+     */
+    private fun handleInviteDeepLink(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        val path = uri.path ?: ""
+
+        val code: String? = when {
+            // HTTP deep link: http(s)://host/invite/xxx
+            path.startsWith("/invite/") -> path.removePrefix("/invite/").trim('/')
+            // Custom scheme: talky://invite/xxx
+            uri.scheme == "talky" && uri.host == "invite" -> path.trim('/')
+            else -> null
+        }
+
+        if (!code.isNullOrEmpty()) {
+            pendingInviteCode = code
         }
     }
 

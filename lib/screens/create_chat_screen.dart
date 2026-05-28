@@ -43,10 +43,17 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
   }
 
   Future<void> _searchUsers(String q) async {
-    if (q.trim().isEmpty) { setState(() => _searchResults = []); return; }
+    if (q.trim().isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
     setState(() => _searching = true);
     final res = await _api.searchUsers(q);
-    setState(() { _searchResults = res; _searching = false; });
+    if (!mounted) return;
+    setState(() {
+      _searchResults = res;
+      _searching = false;
+    });
   }
 
   void _toggleUser(Map<String, dynamic> user) {
@@ -83,8 +90,8 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
             name: name, userIds: userIds, channels: _serverChannels, access: _access);
     }
 
-    setState(() => _loading = false);
     if (!mounted) return;
+    setState(() => _loading = false);
     if (result != null) {
       Navigator.pop(context, result);
     } else {
@@ -99,207 +106,212 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setModal) => Padding(
+        builder: (ctx, setModal) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF16161B),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-              left: 20, right: 20, top: 20),
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              left: 20, right: 20, top: 8),
           child: Column(mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(top: 4, bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            )),
             const Text('Новый подканал',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-            const SizedBox(height: 16),
-            _Field(controller: ctrl, hint: 'Название', autofocus: true),
-            const SizedBox(height: 16),
-            const _SectionLabel('Тип'),
-            const SizedBox(height: 8),
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
+            const SizedBox(height: 4),
+            Text('Выберите тип и название',
+                style: TextStyle(
+                    fontSize: 13, color: Colors.white.withValues(alpha: 0.5))),
+            const SizedBox(height: 18),
+            _SoftTextField(controller: ctrl, hint: 'Название', autofocus: true),
+            const SizedBox(height: 14),
             Row(children: [
-              _TypeChip(label: 'Чат', icon: Icons.tag_rounded,
-                  selected: selectedType == 'TEXT',
-                  onTap: () => setModal(() => selectedType = 'TEXT')),
+              Expanded(child: _PickerChip(
+                icon: Icons.tag_rounded, label: 'Чат',
+                selected: selectedType == 'TEXT',
+                onTap: () => setModal(() => selectedType = 'TEXT'))),
               const SizedBox(width: 8),
-              _TypeChip(label: 'Канал', icon: Icons.campaign_rounded,
-                  selected: selectedType == 'CHANNEL',
-                  onTap: () => setModal(() => selectedType = 'CHANNEL')),
+              Expanded(child: _PickerChip(
+                icon: Icons.campaign_rounded, label: 'Канал',
+                selected: selectedType == 'CHANNEL',
+                onTap: () => setModal(() => selectedType = 'CHANNEL'))),
             ]),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
                   final n = ctrl.text.trim();
-                  if (n.isNotEmpty) setState(() => _serverChannels.add({'name': n, 'type': selectedType}));
+                  if (n.isNotEmpty) {
+                    setState(() => _serverChannels.add({'name': n, 'type': selectedType}));
+                  }
                   Navigator.pop(ctx);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
                 ),
-                child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
           ]),
         ),
       ),
     );
   }
 
-  Color get _accentColor =>
-      widget.type == CreateType.server ? const Color(0xFFF97316) : AppColors.primary;
-
   IconData get _typeIcon => switch (widget.type) {
-    CreateType.group => Icons.people_rounded,
-    CreateType.channel => Icons.campaign_rounded,
-    CreateType.server => Icons.shield_rounded,
-  };
+        CreateType.group => Icons.people_alt_rounded,
+        CreateType.channel => Icons.campaign_rounded,
+        CreateType.server => Icons.dns_rounded,
+      };
 
   String get _title => switch (widget.type) {
-    CreateType.group => 'Создать группу',
-    CreateType.channel => 'Создать канал',
-    CreateType.server => 'Создать сервер',
-  };
+        CreateType.group => 'Новая группа',
+        CreateType.channel => 'Новый канал',
+        CreateType.server => 'Новый сервер',
+      };
 
   String get _hint => switch (widget.type) {
-    CreateType.group => 'Название группы',
-    CreateType.channel => 'Название канала',
-    CreateType.server => 'Мой крутой сервер',
-  };
+        CreateType.group => 'Название группы',
+        CreateType.channel => 'Название канала',
+        CreateType.server => 'Название сервера',
+      };
+
+  String get _description => switch (widget.type) {
+        CreateType.group => 'Чат для общения с участниками',
+        CreateType.channel => 'Лента для подписчиков',
+        CreateType.server => 'Сообщество с каналами и чатами',
+      };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-            child: Row(children: [
-              Icon(_typeIcon, color: _accentColor, size: 28),
-              const SizedBox(width: 10),
-              Expanded(child: Text(_title,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: Icon(Icons.close_rounded, color: Colors.white.withValues(alpha: 0.3)),
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.white.withValues(alpha: 0.7)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(_title,
+            style: const TextStyle(
+                fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white)),
+        centerTitle: true,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        children: [
+          // Type icon header
+          Center(child: Column(children: [
+            Container(
+              width: 76, height: 76,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F1F26),
+                borderRadius: BorderRadius.circular(24),
               ),
-            ]),
+              child: Icon(_typeIcon, size: 36, color: AppColors.primary),
+            ),
+            const SizedBox(height: 14),
+            Text(_description,
+                style: TextStyle(
+                    fontSize: 13, color: Colors.white.withValues(alpha: 0.5)),
+                textAlign: TextAlign.center),
+          ])),
+          const SizedBox(height: 28),
+
+          // Name
+          const _Group('Название'),
+          _SoftTextField(controller: _nameCtrl, hint: _hint),
+
+          const SizedBox(height: 28),
+
+          // Access
+          const _Group('Доступ'),
+          _AccessSelector(
+            value: _access,
+            onChanged: (v) => setState(() => _access = v),
           ),
 
-          // Content
-          Expanded(child: ListView(padding: const EdgeInsets.all(20), children: [
-            // Avatar upload
-            Center(child: GestureDetector(
-              onTap: () {}, // TODO: image picker
-              child: Container(
-                width: 96, height: 96,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignInside,
-                  ),
-                ),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.camera_alt_rounded, size: 28,
-                      color: Colors.white.withValues(alpha: 0.2)),
-                  const SizedBox(height: 4),
-                  Text('ЗАГРУЗИТЬ', style: TextStyle(fontSize: 9,
-                      fontWeight: FontWeight.w800, color: Colors.white.withValues(alpha: 0.2),
-                      letterSpacing: 0.5)),
-                ]),
-              ),
-            )),
-            const SizedBox(height: 24),
-
-            // Name field
-            const _SectionLabel('Название'),
-            const SizedBox(height: 8),
-            _Field(controller: _nameCtrl, hint: _hint),
-            const SizedBox(height: 20),
-
-            // Access
-            const _SectionLabel('Доступ'),
-            const SizedBox(height: 8),
+          if (widget.type == CreateType.server) ...[
+            const SizedBox(height: 28),
             Row(children: [
-              _AccessChip(label: 'Публичный', icon: Icons.public_rounded,
-                  selected: _access == 'PUBLIC',
-                  onTap: () => setState(() => _access = 'PUBLIC')),
-              const SizedBox(width: 8),
-              _AccessChip(label: 'По ссылке', icon: Icons.link_rounded,
-                  selected: _access == 'LINK_ONLY',
-                  onTap: () => setState(() => _access = 'LINK_ONLY')),
-              const SizedBox(width: 8),
-              _AccessChip(label: 'Приватный', icon: Icons.lock_outline_rounded,
-                  selected: _access == 'PRIVATE',
-                  onTap: () => setState(() => _access = 'PRIVATE')),
+              const Expanded(child: _Group('Подканалы')),
+              GestureDetector(
+                onTap: _addChannel,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.add_rounded, size: 14, color: AppColors.primary),
+                    SizedBox(width: 4),
+                    Text('Добавить',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.primary,
+                            fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
             ]),
             const SizedBox(height: 8),
-            _AccessDescription(access: _access),
+            ..._serverChannels.asMap().entries.map((e) => _ChannelRow(
+                  channel: e.value,
+                  onDelete: _serverChannels.length > 1
+                      ? () => setState(() => _serverChannels.removeAt(e.key))
+                      : null,
+                  onToggleType: () => setState(() {
+                    _serverChannels[e.key]['type'] =
+                        _serverChannels[e.key]['type'] == 'TEXT' ? 'CHANNEL' : 'TEXT';
+                  }),
+                )),
+          ],
 
-            // Server channels
-            if (widget.type == CreateType.server) ...[
-              const SizedBox(height: 24),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const _SectionLabel('Подканалы'),
-                GestureDetector(
-                  onTap: _addChannel,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
+          const SizedBox(height: 28),
+          const _Group('Участники'),
+          _SoftTextField(
+            controller: _searchCtrl,
+            hint: 'Поиск пользователей',
+            onChanged: _searchUsers,
+            prefix: Icon(Icons.search_rounded,
+                size: 18, color: Colors.white.withValues(alpha: 0.4)),
+            suffix: _searching
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.primary),
                     ),
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.add, size: 14, color: AppColors.primary),
-                      SizedBox(width: 4),
-                      Text('Добавить', style: TextStyle(
-                          fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 8),
-              ..._serverChannels.asMap().entries.map((e) => _ChannelRow(
-                channel: e.value,
-                onDelete: _serverChannels.length > 1
-                    ? () => setState(() => _serverChannels.removeAt(e.key))
-                    : null,
-                onToggleType: () => setState(() {
-                  _serverChannels[e.key]['type'] =
-                      _serverChannels[e.key]['type'] == 'TEXT' ? 'CHANNEL' : 'TEXT';
-                }),
-              )),
-            ],
+                  )
+                : null,
+          ),
 
-            // Members
-            const SizedBox(height: 24),
-            const _SectionLabel('Добавить участников'),
-            const SizedBox(height: 8),
-            _Field(
-              controller: _searchCtrl,
-              hint: 'Поиск пользователей...',
-              onChanged: _searchUsers,
-              prefix: const Icon(Icons.search, size: 18, color: AppColors.muted),
-              suffix: _searching
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
-                  : null,
-            ),
-
-            // Selected chips
-            if (_selectedUsers.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Wrap(spacing: 8, runSpacing: 8, children: _selectedUsers.map((u) {
-                return Container(
+          // Selected chips
+          if (_selectedUsers.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: _selectedUsers.map((u) {
+              return GestureDetector(
+                onTap: () => _toggleUser(u),
+                child: Container(
                   padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.15),
@@ -307,202 +319,253 @@ class _CreateChatScreenState extends State<CreateChatScreen> {
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text(u['displayName'] ?? u['username'] ?? '',
-                        style: const TextStyle(fontSize: 12, color: AppColors.primary,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.primary,
                             fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () => _toggleUser(u),
-                      child: const Icon(Icons.close_rounded, size: 14, color: AppColors.primary),
-                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.close_rounded,
+                        size: 14, color: AppColors.primary),
                   ]),
-                );
-              }).toList()),
-            ],
-
-            if (_searchResults.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
-                child: Column(children: _searchResults.asMap().entries.map((e) {
-                  final u = e.value;
-                  final sel = _selectedIds.contains(u['id'] as String);
-                  final isLast = e.key == _searchResults.length - 1;
-                  return Column(children: [
-                    ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      leading: u['avatarUrl'] != null
-                          ? CircleAvatar(backgroundImage: NetworkImage(u['avatarUrl']), radius: 20)
-                          : CircleAvatar(radius: 20, backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                              child: Text((u['username'] as String? ?? '?')[0].toUpperCase(),
-                                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700))),
-                      title: Text(u['displayName'] ?? u['username'] ?? '',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                      subtitle: Text('@${u['username']}',
-                          style: const TextStyle(fontSize: 12, color: AppColors.muted)),
-                      trailing: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: 26, height: 26,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: sel ? AppColors.primary : Colors.transparent,
-                          border: Border.all(
-                              color: sel ? AppColors.primary : AppColors.border, width: 2),
+              );
+            }).toList()),
+          ],
+
+          if (_searchResults.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F1F26),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(children: _searchResults.asMap().entries.map((e) {
+                final u = e.value;
+                final sel = _selectedIds.contains(u['id'] as String);
+                final isLast = e.key == _searchResults.length - 1;
+                return Column(children: [
+                  InkWell(
+                    onTap: () => _toggleUser(u),
+                    borderRadius: BorderRadius.circular(18),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(children: [
+                        _UserAvatar(user: u, size: 38),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(u['displayName'] ?? u['username'] ?? '',
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white),
+                                overflow: TextOverflow.ellipsis),
+                            Text('@${u['username']}',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.4)),
+                                overflow: TextOverflow.ellipsis),
+                          ],
+                        )),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: 22, height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: sel ? AppColors.primary : Colors.transparent,
+                            border: Border.all(
+                                color: sel
+                                    ? AppColors.primary
+                                    : Colors.white.withValues(alpha: 0.2),
+                                width: 1.5),
+                          ),
+                          child: sel
+                              ? const Icon(Icons.check_rounded,
+                                  size: 14, color: Colors.white)
+                              : null,
                         ),
-                        child: sel
-                            ? const Icon(Icons.check, size: 14, color: Colors.white)
-                            : null,
-                      ),
-                      onTap: () => _toggleUser(u),
+                      ]),
                     ),
-                    if (!isLast) Divider(height: 1,
-                        color: Colors.white.withValues(alpha: 0.05), indent: 56, endIndent: 16),
-                  ]);
-                }).toList()),
-              ),
-            ],
-
-            const SizedBox(height: 32),
-          ])),
-
-          // Bottom button + decorative bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _create,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _accentColor,
-                  foregroundColor: widget.type == CreateType.server ? Colors.black : Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  elevation: 4,
-                  shadowColor: _accentColor.withValues(alpha: 0.3),
-                ),
-                child: _loading
-                    ? const SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text('Создать сейчас',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              ),
+                  ),
+                  if (!isLast)
+                    Divider(
+                        height: 1,
+                        color: Colors.white.withValues(alpha: 0.05),
+                        indent: 64, endIndent: 14),
+                ]);
+              }).toList()),
             ),
+          ],
+
+          const SizedBox(height: 28),
+          _PrimaryButton(
+            label: switch (widget.type) {
+              CreateType.group => 'Создать группу',
+              CreateType.channel => 'Создать канал',
+              CreateType.server => 'Создать сервер',
+            },
+            loading: _loading,
+            onTap: _create,
           ),
-          // Decorative bar
-          Container(
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: _accentColor,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ]),
+        ],
       ),
     );
   }
 }
 
-// ─── Виджеты ─────────────────────────────────────────────────────────────────
+// ─── Building blocks ─────────────────────────────────────────────────────────
 
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
+class _Group extends StatelessWidget {
+  final String title;
+  const _Group(this.title);
   @override
-  Widget build(BuildContext context) => Text(text.toUpperCase(),
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: AppColors.muted, letterSpacing: 1));
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 12),
+        child: Text(title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.35),
+              letterSpacing: 1.4,
+            )),
+      );
 }
 
-class _Field extends StatelessWidget {
+class _SoftTextField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
   final Widget? prefix;
   final Widget? suffix;
   final bool autofocus;
-  const _Field({required this.controller, required this.hint,
-      this.onChanged, this.prefix, this.suffix, this.autofocus = false});
+
+  const _SoftTextField({
+    required this.controller,
+    required this.hint,
+    this.onChanged,
+    this.prefix,
+    this.suffix,
+    this.autofocus = false,
+  });
+
   @override
   Widget build(BuildContext context) => TextField(
-    controller: controller,
-    onChanged: onChanged,
-    autofocus: autofocus,
-    style: const TextStyle(color: Colors.white),
-    decoration: InputDecoration(
-      hintText: hint,
-      prefixIcon: prefix,
-      suffixIcon: suffix != null
-          ? Padding(padding: const EdgeInsets.all(12), child: suffix) : null,
-      filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.05),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-    ),
-  );
-}
-
-class _AccessChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-  const _AccessChip({required this.label, required this.icon,
-      required this.selected, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.primary.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.1),
-          width: selected ? 1.5 : 1,
+        controller: controller,
+        onChanged: onChanged,
+        autofocus: autofocus,
+        style: const TextStyle(color: Colors.white, fontSize: 14.5),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14.5),
+          prefixIcon: prefix,
+          suffixIcon: suffix,
+          filled: true,
+          fillColor: const Color(0xFF1F1F26),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                  color: AppColors.primary.withValues(alpha: 0.4), width: 1)),
         ),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 13, color: selected ? AppColors.primary : AppColors.muted),
-        const SizedBox(width: 5),
-        Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-            color: selected ? AppColors.primary : AppColors.muted)),
-      ]),
-    ),
-  );
+      );
 }
 
-class _AccessDescription extends StatelessWidget {
-  final String access;
-  const _AccessDescription({required this.access});
+class _AccessSelector extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _AccessSelector({required this.value, required this.onChanged});
+
+  static const _options = [
+    {'v': 'PUBLIC',    'l': 'Публичный',  'i': Icons.public_rounded,
+      'desc': 'Любой может найти и вступить', 'color': Color(0xFF22C55E)},
+    {'v': 'LINK_ONLY', 'l': 'По ссылке',  'i': Icons.link_rounded,
+      'desc': 'Только по ссылке-приглашению', 'color': Color(0xFFF59E0B)},
+    {'v': 'PRIVATE',   'l': 'Приватный',  'i': Icons.lock_outline_rounded,
+      'desc': 'Только приглашённые участники', 'color': Color(0xFFEF4444)},
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final (icon, text, color) = switch (access) {
-      'PUBLIC' => (Icons.public_rounded, 'Любой может найти и вступить', const Color(0xFF22C55E)),
-      'LINK_ONLY' => (Icons.link_rounded, 'Вступить можно только по ссылке-приглашению', const Color(0xFFF59E0B)),
-      _ => (Icons.lock_outline_rounded, 'Только приглашённые участники', const Color(0xFFEF4444)),
-    };
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 8),
-        Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.9)))),
-      ]),
+    return Column(
+      children: _options.map((o) {
+        final v = o['v'] as String;
+        final selected = value == v;
+        final color = o['color'] as Color;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: selected
+                ? AppColors.primary.withValues(alpha: 0.1)
+                : const Color(0xFF1F1F26),
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: () => onChanged(v),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: selected
+                      ? Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          width: 1)
+                      : null,
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(o['i'] as IconData, size: 18, color: color),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(o['l'] as String,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white)),
+                      const SizedBox(height: 2),
+                      Text(o['desc'] as String,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.4))),
+                    ],
+                  )),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 22, height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected ? AppColors.primary : Colors.transparent,
+                      border: Border.all(
+                          color: selected
+                              ? AppColors.primary
+                              : Colors.white.withValues(alpha: 0.2),
+                          width: 1.5),
+                    ),
+                    child: selected
+                        ? const Icon(Icons.check_rounded,
+                            size: 14, color: Colors.white)
+                        : null,
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
@@ -511,7 +574,11 @@ class _ChannelRow extends StatelessWidget {
   final Map<String, String> channel;
   final VoidCallback? onDelete;
   final VoidCallback onToggleType;
-  const _ChannelRow({required this.channel, this.onDelete, required this.onToggleType});
+  const _ChannelRow({
+    required this.channel,
+    this.onDelete,
+    required this.onToggleType,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -519,28 +586,29 @@ class _ChannelRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: const Color(0xFF1F1F26),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Row(children: [
           Icon(isChannel ? Icons.campaign_rounded : Icons.tag_rounded,
-              size: 16, color: AppColors.muted),
+              size: 17, color: Colors.white.withValues(alpha: 0.5)),
           const SizedBox(width: 10),
           Expanded(child: Text(channel['name'] ?? '',
               style: const TextStyle(fontSize: 14, color: Colors.white))),
           GestureDetector(
             onTap: onToggleType,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
+                color: AppColors.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(isChannel ? 'Канал' : 'Чат',
-                  style: const TextStyle(fontSize: 11, color: AppColors.primary,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.primary,
                       fontWeight: FontWeight.w600)),
             ),
           ),
@@ -548,8 +616,8 @@ class _ChannelRow extends StatelessWidget {
             const SizedBox(width: 8),
             GestureDetector(
               onTap: onDelete,
-              child: Icon(Icons.close_rounded, size: 16,
-                  color: Colors.white.withValues(alpha: 0.3)),
+              child: Icon(Icons.close_rounded,
+                  size: 17, color: Colors.white.withValues(alpha: 0.3)),
             ),
           ],
         ]),
@@ -558,32 +626,116 @@ class _ChannelRow extends StatelessWidget {
   }
 }
 
-class _TypeChip extends StatelessWidget {
-  final String label;
+class _PickerChip extends StatelessWidget {
   final IconData icon;
+  final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _TypeChip({required this.label, required this.icon,
-      required this.selected, required this.onTap});
+  const _PickerChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.primary.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.1),
-          width: selected ? 1.5 : 1,
+  Widget build(BuildContext context) => Material(
+        color: selected
+            ? AppColors.primary.withValues(alpha: 0.15)
+            : const Color(0xFF1F1F26),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: selected
+                  ? Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.4), width: 1)
+                  : null,
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon,
+                  size: 16,
+                  color: selected
+                      ? AppColors.primary
+                      : Colors.white.withValues(alpha: 0.5)),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: selected
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.6))),
+            ]),
+          ),
         ),
+      );
+}
+
+class _UserAvatar extends StatelessWidget {
+  final Map<String, dynamic> user;
+  final double size;
+  const _UserAvatar({required this.user, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = user['avatarUrl'] as String?;
+    if (url != null && url.isNotEmpty) {
+      return CircleAvatar(backgroundImage: NetworkImage(url), radius: size / 2);
+    }
+    final letter = (user['username'] as String? ?? '?').characters.first.toUpperCase();
+    return Container(
+      width: size, height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primary.withValues(alpha: 0.15),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 14, color: selected ? AppColors.primary : AppColors.muted),
-        const SizedBox(width: 6),
-        Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-            color: selected ? AppColors.primary : AppColors.muted)),
-      ]),
-    ),
-  );
+      child: Text(letter,
+          style: TextStyle(
+              fontSize: size * 0.42,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback onTap;
+  const _PrimaryButton({
+    required this.label,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: loading ? null : onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            height: 50,
+            alignment: Alignment.center,
+            child: loading
+                ? const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
+                  )
+                : Text(label,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+          ),
+        ),
+      );
 }

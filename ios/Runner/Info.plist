@@ -75,7 +75,7 @@
 			<string>com.example.messanger</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>speeky</string>
+				<string>talky</string>
 			</array>
 		</dict>
 	</array>

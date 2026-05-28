@@ -8,6 +8,7 @@ import '../models/chat.dart';
 import '../services/api_service.dart';
 import '../widgets/colored_avatar.dart';
 import 'chat_screen.dart';
+import 'add_member_sheet.dart';
 
 /// Настройки сервера/группы/канала — портирован 1-в-1 из веб-версии
 /// (components/ServerSettings.tsx и components/ChatSettinds.tsx).
@@ -246,7 +247,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> {
   // ─── Quick Actions ─────────────────────────────────────────────────────────
   Widget _buildQuickActions() {
     return Row(children: [
-      Expanded(child: _quickAction(Icons.person_add_outlined, 'Добавить', AppColors.primary, () {})),
+      Expanded(child: _quickAction(Icons.person_add_outlined, 'Добавить', AppColors.primary, _openAddMember)),
       const SizedBox(width: 8),
       if (_isServer)
         Expanded(child: _quickAction(Icons.tag, 'Канал', Colors.blue, _showCreateChannelDialog)),
@@ -523,7 +524,10 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> {
                 style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
           ])),
           if (_isAdmin)
-            IconButton(icon: const Icon(Icons.person_add_alt_1, color: AppColors.primary, size: 20), onPressed: () {}),
+            IconButton(
+              icon: const Icon(Icons.person_add_alt_1, color: AppColors.primary, size: 20),
+              onPressed: _openAddMember,
+            ),
         ]),
         if (_members.length > 5) ...[
           const SizedBox(height: 12),
@@ -671,6 +675,20 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> {
           const SnackBar(content: Text('Не удалось сохранить'), backgroundColor: Colors.red));
       }
     }
+  }
+
+  Future<void> _openAddMember() async {
+    final existing = _members
+        .map((m) => (m['userId'] ?? m['id']) as String?)
+        .whereType<String>()
+        .toList();
+    final added = await showAddMemberSheet(
+      context,
+      chatId: _isServer ? null : widget.chat.id,
+      serverId: _isServer ? widget.chat.id : null,
+      existingMemberIds: existing,
+    );
+    if (added != null && added > 0) await _load();
   }
 
   void _showCreateChannelDialog() {

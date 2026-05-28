@@ -27,7 +27,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <application
-        android:label="Speeky"
+        android:label="Talky"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
@@ -51,12 +51,19 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Custom URL Scheme: speeky://profile/{userId} — всегда открывает приложение -->
+            <!-- Custom URL Scheme: talky://profile/{userId} — всегда открывает приложение -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="speeky" android:host="profile"/>
+                <data android:scheme="talky" android:host="profile"/>
+            </intent-filter>
+            <!-- Custom URL Scheme: talky://invite/{code} — всегда открывает приложение -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="talky" android:host="invite"/>
             </intent-filter>
             <!-- Share intent: текст -->
             <intent-filter>
@@ -108,6 +115,19 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https" android:host="194.87.201.226" android:pathPrefix="/profile/"/>
+            </intent-filter>
+            <!-- Deep Link (HTTPS): https://194.87.201.226/invite/xxx -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="http" android:host="194.87.201.226" android:pathPrefix="/invite/"/>
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="194.87.201.226" android:pathPrefix="/invite/"/>
             </intent-filter>
             <!-- Share intent: несколько файлов (изображения / видео / документы) -->
             <intent-filter>

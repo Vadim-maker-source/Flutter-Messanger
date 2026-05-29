@@ -1,4 +1,5 @@
-﻿import 'dart:io';
+﻿import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -48,6 +49,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Online status
   bool _partnerOnline = false;
+
+  // Block status (только для приватных чатов)
+  bool _iBlockedThem = false;
+  bool _theyBlockedMe = false;
+  StreamSubscription<Map<String, dynamic>>? _blockSub;
 
   // Pagination
   int _page = 1;
@@ -182,6 +188,31 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() => _partnerOnline = isOnline);
       }
     });
+
+    // Блокировка — только для приватных чатов
+    if (widget.chat.type == 'PRIVATE' && widget.chat.partnerId != null) {
+      // Загружаем текущий статус
+      final status = await _api.getBlockStatus(widget.chat.partnerId!);
+      if (mounted) {
+        setState(() {
+          _iBlockedThem = status['iBlockedThem'] ?? false;
+          _theyBlockedMe = status['theyBlockedMe'] ?? false;
+        });
+      }
+      // Подписываемся на realtime обновления
+      _blockSub = _pusher.blockUpdates.listen((data) {
+        if (!mounted) return;
+        if (data['targetId'] != widget.chat.partnerId) return;
+        setState(() {
+          if (data.containsKey('iBlockedThem')) {
+            _iBlockedThem = data['iBlockedThem'] == true;
+          }
+          if (data.containsKey('theyBlockedMe')) {
+            _theyBlockedMe = data['theyBlockedMe'] == true;
+          }
+        });
+      });
+    }
   }
 
   Future<void> _loadMessages() async {
@@ -464,6 +495,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _stopTyping();
+    _blockSub?.cancel();
     _pusher.unsubscribe(widget.chat.id);
     _pusher.unsubscribeFromPresence();
     _ctrl.dispose();
@@ -476,6 +508,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final isChannel = widget.chat.type == 'CHANNEL';
     final canWrite = !isChannel || widget.chat.role == 'CREATOR' || widget.chat.role == 'ADMIN';
+    final isBlocked = _iBlockedThem || _theyBlockedMe;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -551,7 +584,12 @@ class _ChatScreenState extends State<ChatScreen> {
               Text('Загрузка...', style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6))),
             ]),
           ),
-        if (canWrite) _buildInput() else _buildReadOnly(),
+        if (isBlocked)
+          _buildBlockedPanel()
+        else if (canWrite)
+          _buildInput()
+        else
+          _buildReadOnly(),
         if (_showEmoji)
           SizedBox(
             height: 260,
@@ -877,6 +915,123 @@ class _ChatScreenState extends State<ChatScreen> {
           style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6))),
     ]),
   );
+
+  /// Панель вместо поля ввода если есть блокировка между пользователями.
+  ///
+  /// Если *я* заблокировал — показываем кнопку «Разблокировать».
+  /// Если *меня* заблокировали — серую плашку «Вы не можете писать».
+  Widget _buildBlockedPanel() {
+    final partnerId = widget.chat.partnerId;
+    if (_theyBlockedMe) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        decoration: const BoxDecoration(color: Color(0xFF1D2633)),
+        child: SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1F1F26),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.block_rounded,
+                    color: Color(0xFFEF4444), size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Вы не можете писать',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text('Этот пользователь заблокировал вас',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.5))),
+                ],
+              )),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    // _iBlockedThem
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: const BoxDecoration(color: Color(0xFF1D2633)),
+      child: SafeArea(
+        top: false,
+        child: Material(
+          color: const Color(0xFF1F1F26),
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            onTap: partnerId == null ? null : () => _unblockPartner(partnerId),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.lock_open_rounded,
+                      color: AppColors.primary, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Разблокировать',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white)),
+                    const SizedBox(height: 2),
+                    Text('Вы заблокировали этого пользователя',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.5))),
+                  ],
+                )),
+                Icon(Icons.chevron_right_rounded,
+                    color: Colors.white.withValues(alpha: 0.3)),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _unblockPartner(String partnerId) async {
+    final ok = await _api.unblockUser(partnerId);
+    if (!mounted) return;
+    if (ok) {
+      // Pusher событие сам обновит state, но сделаем optimistic update
+      setState(() => _iBlockedThem = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь разблокирован'),
+            duration: Duration(seconds: 1)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось разблокировать')),
+      );
+    }
+  }
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;

@@ -212,6 +212,15 @@ class PusherService {
 
   // ─── User channel (calls) ──────────────────────────────────────────────────
 
+  /// Глобальный поток событий блокировки. Любой экран может подписаться,
+  /// чтобы реагировать на изменения статуса в реальном времени.
+  ///
+  /// Полезная нагрузка:
+  ///   • `targetId` — ID пользователя, статус с которым изменился
+  ///   • `iBlockedThem` или `theyBlockedMe` — что произошло
+  final _blockUpdates = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get blockUpdates => _blockUpdates.stream;
+
   void subscribeToUserChannel(
     String userId, {
     required void Function(Map<String, dynamic>) onIncomingCall,
@@ -234,6 +243,9 @@ class PusherService {
         case 'call-accepted-elsewhere':
           print('[PUSHER] -> call-accepted-elsewhere');
           onCallAcceptedElsewhere?.call(data);
+        case 'block-update':
+          print('[PUSHER] -> block-update');
+          _blockUpdates.add(data);
       }
     });
   }

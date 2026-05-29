@@ -804,8 +804,16 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> {
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена', style: TextStyle(color: Colors.white60))),
         TextButton(onPressed: () async {
           Navigator.pop(ctx);
-          final ok = await _api.leaveChat(widget.chat.id);
-          if (ok && mounted) { Navigator.pop(context); Navigator.pop(context); }
+          final ok = await _api.leaveChatOrServer(widget.chat.id, isServer: _isServer);
+          if (!mounted) return;
+          if (ok) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Вы покинули ${_isServer ? "сервер" : "чат"}')));
+            Navigator.pop(context); Navigator.pop(context);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Не удалось покинуть')));
+          }
         }, child: const Text('Покинуть', style: TextStyle(color: Colors.red))),
       ],
     ));
@@ -833,8 +841,29 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> {
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена', style: TextStyle(color: Colors.white60))),
         TextButton(onPressed: () async {
           Navigator.pop(ctx);
-          final ok = await _api.deleteChat(widget.chat.id);
-          if (ok && mounted) { Navigator.pop(context); Navigator.pop(context); }
+          if (_isServer) {
+            final result = await _api.deleteServer(widget.chat.id);
+            if (!mounted) return;
+            if (result.success) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Сервер удалён')));
+              Navigator.pop(context); Navigator.pop(context);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(result.error ?? 'Не удалось удалить')));
+            }
+          } else {
+            final ok = await _api.deleteChat(widget.chat.id);
+            if (!mounted) return;
+            if (ok) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Чат удалён')));
+              Navigator.pop(context); Navigator.pop(context);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Не удалось удалить')));
+            }
+          }
         }, child: const Text('Удалить', style: TextStyle(color: Colors.red))),
       ],
     ));

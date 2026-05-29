@@ -719,6 +719,41 @@ class ApiService {
     return false;
   }
 
+  /// Удаляет сервер целиком (только владелец).
+  Future<({bool success, String? error})> deleteServer(String serverId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/servers/$serverId'),
+        headers: await _headers(),
+      );
+      final data = _decode(res);
+      if (data == null) return (success: false, error: 'Ошибка сети');
+      return (
+        success: data['success'] == true,
+        error: data['error'] as String?,
+      );
+    } catch (_) {
+      return (success: false, error: 'Ошибка сети');
+    }
+  }
+
+  /// Покидает чат/группу/сервер. Удаляет себя из участников.
+  Future<bool> leaveChatOrServer(String id, {bool isServer = false}) async {
+    try {
+      if (isServer) {
+        final res = await http.delete(
+          Uri.parse('$baseUrl/servers/$id/members'),
+          headers: await _headers(),
+        );
+        final data = _decode(res);
+        return data?['success'] == true;
+      } else {
+        return await leaveChat(id);
+      }
+    } catch (_) {}
+    return false;
+  }
+
   // ─── Invites ────────────────────────────────────────────────────────────────
 
   /// Получает информацию по invite-коду без присоединения.

@@ -437,74 +437,155 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               },
             ),
           const Divider(color: AppColors.border, height: 1),
-          // Удалить у меня
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 20),
-            title: const Text('Удалить у меня', style: TextStyle(color: Color(0xFFEF4444))),
-            onTap: () async {
-              Navigator.pop(ctx);
-              final ok = await _api.leaveChat(chat.id);
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(ok ? 'Чат удалён' : 'Не удалось удалить чат'),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-              if (ok) _load();
-            },
-          ),
-          // Удалить у всех
-          ListTile(
-            leading: const Icon(Icons.delete_forever, color: Color(0xFFEF4444), size: 20),
-            title: const Text('Удалить у всех', style: TextStyle(color: Color(0xFFEF4444))),
-            onTap: () async {
-              Navigator.pop(ctx);
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (c) => AlertDialog(
-                  backgroundColor: AppColors.surfaceAlt,
-                  title: const Text('Удалить чат у всех?', style: TextStyle(color: Colors.white)),
-                  content: const Text('Это действие нельзя отменить.',
-                      style: TextStyle(color: Colors.white70)),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(c, false),
-                      child: const Text('Отмена'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(c, true),
-                      child: const Text('Удалить', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm != true || !mounted) return;
-              final ok = await _api.deleteChat(chat.id);
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(ok ? 'Чат удалён' : 'Не удалось удалить чат'),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-              if (ok) _load();
-            },
-          ),
-          // Заблокировать (только для приватных)
-          if (chat.type == 'PRIVATE' && chat.partnerId != null)
+          // Покинуть чат — для групп/каналов где пользователь участник
+          if (chat.type != 'PRIVATE')
             ListTile(
-              leading: const Icon(Icons.block, color: Color(0xFFEF4444), size: 20),
-              title: const Text('Заблокировать', style: TextStyle(color: Color(0xFFEF4444))),
+              leading: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 20),
+              title: Text(
+                chat.type == 'CHANNEL' ? 'Отписаться от канала' : 'Покинуть чат',
+                style: const TextStyle(color: Color(0xFFEF4444)),
+              ),
               onTap: () async {
                 Navigator.pop(ctx);
-                final ok = await _api.blockUser(chat.partnerId!);
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    backgroundColor: AppColors.surfaceAlt,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    title: Text(
+                        chat.type == 'CHANNEL'
+                            ? 'Отписаться от канала?'
+                            : 'Покинуть чат?',
+                        style: const TextStyle(color: Colors.white)),
+                    content: const Text(
+                      'Вы перестанете получать новые сообщения. Войти можно будет по приглашению.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: const Text('Отмена'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('Покинуть',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm != true || !mounted) return;
+                final ok = await _api.leaveChat(chat.id);
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(ok ? 'Пользователь заблокирован' : 'Не удалось заблокировать'),
-                    duration: const Duration(seconds: 2),
+                    content: Text(ok
+                        ? 'Вы покинули чат'
+                        : 'Не удалось покинуть'),
+                    duration: const Duration(seconds: 1),
                   ),
+                );
+                if (ok) _load();
+              },
+            ),
+          // Удалить у меня — только для приватных чатов
+          if (chat.type == 'PRIVATE')
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 20),
+              title: const Text('Удалить у меня',
+                  style: TextStyle(color: Color(0xFFEF4444))),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final ok = await _api.leaveChat(chat.id);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        ok ? 'Чат удалён' : 'Не удалось удалить чат'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+                if (ok) _load();
+              },
+            ),
+          // Удалить у всех — только для создателя/админа
+          if (chat.role == 'CREATOR' || chat.role == 'ADMIN')
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Color(0xFFEF4444), size: 20),
+              title: const Text('Удалить у всех',
+                  style: TextStyle(color: Color(0xFFEF4444))),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    backgroundColor: AppColors.surfaceAlt,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Удалить чат у всех?',
+                        style: TextStyle(color: Colors.white)),
+                    content: const Text('Это действие нельзя отменить.',
+                        style: TextStyle(color: Colors.white70)),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: const Text('Отмена'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('Удалить',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm != true || !mounted) return;
+                final ok = await _api.deleteChat(chat.id);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        ok ? 'Чат удалён' : 'Не удалось удалить чат'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+                if (ok) _load();
+              },
+            ),
+          // Блокировка/разблокировка пользователя — только для приватных чатов
+          if (chat.type == 'PRIVATE' && chat.partnerId != null)
+            FutureBuilder<Map<String, bool>>(
+              future: _api.getBlockStatus(chat.partnerId!),
+              builder: (_, snap) {
+                final iBlocked = snap.data?['iBlockedThem'] == true;
+                return ListTile(
+                  leading: Icon(
+                      iBlocked ? Icons.lock_open_rounded : Icons.block_rounded,
+                      color: const Color(0xFFEF4444),
+                      size: 20),
+                  title: Text(
+                      iBlocked
+                          ? 'Разблокировать'
+                          : 'Заблокировать',
+                      style: const TextStyle(color: Color(0xFFEF4444))),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final ok = iBlocked
+                        ? await _api.unblockUser(chat.partnerId!)
+                        : await _api.blockUser(chat.partnerId!);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(ok
+                            ? (iBlocked
+                                ? 'Пользователь разблокирован'
+                                : 'Пользователь заблокирован')
+                            : 'Не удалось'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
                 );
               },
             ),

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -15,6 +14,7 @@ import 'screens/invite_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/pusher_service_ws.dart';
+import 'services/secure_store.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final callPusher = PusherService();
@@ -177,8 +177,8 @@ class _SplashState extends State<_Splash> {
   }
 
   Future<void> _check() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token'); final userId = prefs.getString('user_id');
+    final token = await SecureStore.getToken();
+    final userId = await SecureStore.getUserId();
     if (!mounted) return;
     if (token != null && userId != null) { await _init(userId); if (!mounted) return; Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen())); }
     else Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
@@ -282,8 +282,8 @@ void _nav(String cid, String chatId, String ct, bool inc, String caller, String 
 }
 
 Future<void> initCallsAfterLogin(String userId, String displayName) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('user_id', userId); await prefs.setString('user_display_name', displayName);
+  await SecureStore.setUserId(userId);
+  await SecureStore.setDisplayName(displayName);
   await _init(userId);
 }
 void disposeCallsOnLogout(String userId) { callPusher.unsubscribeFromUserChannel(userId); _initDone = false; }

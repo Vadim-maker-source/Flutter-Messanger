@@ -61,11 +61,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog>
     super.dispose();
   }
 
-  String _genCode() => (Random().nextInt(900000) + 100000).toString();
-
-  Future<bool> _sendCode(String code, {required _Method method}) async {
+  // Сервер генерирует код. Клиент знает только то что ввёл пользователь.
+  Future<bool> _sendCode({required _Method method}) async {
     final resp = await _api.send2faCode(
-      code: code,
       action: _forgotMode ? 'reset-password' : 'change-password',
       method: method == _Method.email ? 'email' : 'push',
     );
@@ -90,21 +88,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog>
       return setState(() => _error = 'Новый пароль должен отличаться');
     }
 
+    // В режиме "изменить пароль" с известным старым — 2FA не обязателен.
+    // Сразу меняем пароль (старый сам по себе доказывает identity).
     setState(() => _loading = true);
-    _generatedCode = _genCode();
-    final ok = await _sendCode(_generatedCode, method: _Method.push);
-    setState(() => _loading = false);
-
-    if (!ok) {
-      return setState(() => _error = 'Не удалось отправить код');
-    }
-    setState(() {
-      _step = _Step.verify;
-      _resendIn = 60;
-    });
-    _startResendTimer();
-    Future.delayed(const Duration(milliseconds: 100),
-        () => _codeFocus[0].requestFocus());
+    await _doChangePassword(_oldCtrl.text, _newCtrl.text);
   }
 
   void _handleForgot() {
@@ -121,8 +108,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog>
       _loading = true;
       _error = null;
     });
-    _generatedCode = _genCode();
-    final ok = await _sendCode(_generatedCode, method: method);
+    final ok = await _sendCode(method: method);
     setState(() => _loading = false);
 
     if (!ok) {
@@ -150,8 +136,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog>
   Future<void> _handleResend() async {
     if (_resendIn > 0) return;
     setState(() => _loading = true);
-    _generatedCode = _genCode();
-    final ok = await _sendCode(_generatedCode, method: _method);
+    final ok = await _sendCode(method: _method);
     setState(() => _loading = false);
     if (ok) {
       for (final c in _codeCtrls) {
@@ -171,29 +156,25 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog>
     if (code.length == 6) _verifyCode(code);
   }
 
-  Future<void> _verifyCode(String code) async {
-    if (code != _generatedCode) {
-      setState(() => _error = 'Неверный код');
-      for (final c in _codeCtrls) {
-        c.clear();
-      }
-      _codeFocus[0].requestFocus();
-      return;
-    }
-    setState(() => _error = null);
-    if (_forgotMode) {
-      setState(() => _step = _Step.newPassword);
-      return;
-    }
-    await _doChangePassword(_oldCtrl.text, _newCtrl.text);
+  /// При forgot-режиме — отправляем код на сервер для проверки одним запросом
+  /// со сменой пароля, чтобы сервер атомарно валидировал и менял.
+  /// Здесь только переход к экрану ввода нового пароля.
+  void _verifyCode(String code) {
+    setState(() {
+      _enteredCode = code;
+      _error = null;
+      _step = _Step.newPassword;
+    });
   }
+
+  String _enteredCode = '';
 
   Future<void> _doChangePassword(String oldPwd, String newPwd) async {
     setState(() => _loading = true);
     final ok = await _api.changePassword(
       oldPassword: oldPwd,
       newPassword: newPwd,
-      forgot: _forgotMode,
+      code: _forgotMode ? _enteredCode : null,
     );
     if (!mounted) return;
     setState(() => _loading = false);

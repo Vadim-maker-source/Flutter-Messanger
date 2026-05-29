@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import 'secure_store.dart';
 
 class ApiService {
   static const String baseUrl = 'http://194.87.201.226/api/mobile';
@@ -13,20 +13,17 @@ class ApiService {
   String? _token;
 
   Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString('auth_token');
+    _token = await SecureStore.getToken();
     return _token;
   }
 
   Future<void> _saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', token);
+    await SecureStore.setToken(token);
     _token = token;
   }
 
   Future<void> clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
+    await SecureStore.clearAll();
     _token = null;
   }
 
@@ -60,9 +57,8 @@ class ApiService {
       final data = _decode(res);
       if (data != null && data['success'] == true) {
         await _saveToken(data['token']);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_id', data['user']['id'] ?? '');
-        await prefs.setString('user_display_name',
+        await SecureStore.setUserId(data['user']['id'] ?? '');
+        await SecureStore.setDisplayName(
             data['user']['displayName'] ?? data['user']['username'] ?? '');
         return {'success': true, 'user': User.fromJson(data['user'])};
       }
@@ -393,8 +389,10 @@ class ApiService {
 
   // ─── 2FA & Password ──────────────────────────────────────────────────────────
 
+  /// Запрашивает у сервера отправку 2FA-кода (push или email).
+  /// Сервер сам генерирует код и шлёт его пользователю.
+  /// Клиент НЕ знает код — это ключ безопасности.
   Future<Map<String, dynamic>?> send2faCode({
-    required String code,
     required String action,
     required String method,
   }) async {
@@ -402,7 +400,7 @@ class ApiService {
       final res = await http.post(
         Uri.parse('$baseUrl/auth/send-2fa-code'),
         headers: await _headers(),
-        body: jsonEncode({'code': code, 'action': action, 'method': method}),
+        body: jsonEncode({'action': action, 'method': method}),
       );
       return _decode(res);
     } catch (_) {
@@ -410,20 +408,27 @@ class ApiService {
     }
   }
 
+  /// Меняет пароль.
+  ///   • При обычной смене:  oldPassword + newPassword
+  ///   • При "забыл пароль": code + newPassword (oldPassword не нужен)
   Future<({bool success, String? error})> changePassword({
     required String oldPassword,
     required String newPassword,
-    bool forgot = false,
+    String? code,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'newPassword': newPassword,
+      };
+      if (code != null && code.isNotEmpty) {
+        body['code'] = code;
+      } else {
+        body['oldPassword'] = oldPassword;
+      }
       final res = await http.post(
         Uri.parse('$baseUrl/auth/change-password'),
         headers: await _headers(),
-        body: jsonEncode({
-          'oldPassword': oldPassword,
-          'newPassword': newPassword,
-          'forgot': forgot,
-        }),
+        body: jsonEncode(body),
       );
       final data = _decode(res);
       if (data == null) return (success: false, error: 'Ошибка сети');
